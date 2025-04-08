@@ -94,22 +94,37 @@
         const chatForm = document.getElementById('chat-form');
         const promptInput = document.getElementById('prompt');
 
-        // Generate or retrieve session ID
         let sessionId = localStorage.getItem('sessionId') || 'pla_' + Math.random().toString(36).substr(2, 9);
         localStorage.setItem('sessionId', sessionId);
+
+        // Retry fetch function to handle Render spin-up delay
+        async function tryFetch(url, options, retries = 3, delay = 5000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+                    return response;
+                } catch (err) {
+                    if (i < retries - 1) {
+                        await new Promise(res => setTimeout(res, delay));
+                        continue;
+                    }
+                    throw err;
+                }
+            }
+        }
 
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const prompt = promptInput.value.trim();
             if (!prompt) return;
 
-            // Display user message
             addMessage('user', prompt);
             promptInput.value = '';
+            const typing = addMessage('bot', 'Assistant is typing...');
 
-            // Send request to FastAPI
             try {
-                const response = await fetch('/chat', {
+                const response = await tryFetch('/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -118,13 +133,15 @@
                     })
                 });
                 const data = await response.json();
+                chatDisplay.removeChild(typing);
                 if (response.ok) {
                     addMessage('bot', data.response);
                 } else {
                     addMessage('bot', 'Error: ' + data.detail);
                 }
             } catch (error) {
-                addMessage('bot', 'Sorry, I couldn’t connect to the server. Is it running?');
+                chatDisplay.removeChild(typing);
+                addMessage('bot', 'Sorry, I couldn’t connect to the server. Please try again.');
             }
         });
 
@@ -134,6 +151,7 @@
             messageDiv.textContent = text;
             chatDisplay.appendChild(messageDiv);
             chatDisplay.scrollTop = chatDisplay.scrollHeight;
+            return messageDiv;
         }
     </script>
 </body>
