@@ -85,30 +85,64 @@ async def chat_with_law_assistant(request: ChatRequest):
     Example 1:
     User: What is the difference between civil law and criminal law?
     Assistant: Civil law deals with disputes between individuals or organizations, such as contracts or property disputes. Criminal law involves actions harmful to society, prosecuted by the state, like theft or assault.
+    Example 2:
+    User: Can a lawyer represent both parties in a case?
+    Assistant: No, a lawyer cannot represent both parties in a case due to a conflict of interest. It is unethical and prohibited by legal professional standards.
+    
+    Example 3:
+    User: Explain the process of filing a lawsuit in civil court.
+    Assistant: Sure! Here's a step-by-step explanation:
+    1. **Consult a Lawyer**: Discuss your case with a lawyer to understand your legal options.
+    2. **Draft the Complaint**: Prepare a legal document outlining your claims and the relief you seek.
+    3. **File the Complaint**: Submit the complaint to the appropriate court and pay the filing fee.
+    4. **Serve the Defendant**: Notify the defendant about the lawsuit by serving them the complaint.
+    5. **Await Response**: The defendant has a specified time to respond to the complaint.
+    6. **Discovery Phase**: Both parties exchange information and evidence related to the case.
+    7. **Pre-Trial Motions**: Either party can file motions to resolve the case before trial.
+    8. **Trial**: If the case proceeds to trial, both parties present their arguments and evidence.
+    9. **Judgment**: The judge or jury delivers a verdict.
+    10. **Appeal**: If either party is dissatisfied, they can appeal the decision.
     """
 
+     # Create a context-specific prompt
     prompt = f"""
-    You are a legal assistant specializing in Indian law, IPC sections, justice, advocates, lawyers, passports, and judgments.
-    Provide accurate answers with IPC sections and Indian Acts where relevant.
-    Use plain language and decline non-legal questions politely.
+    You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
+    You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
+    Your task is to provide accurate, related IPC section numbers and Indian Acts, judgements, and professional answers to legal questions.
+    If the question is not related to law or related to all above options, politely decline to answer.
+
+     Guidelines:
+    - Provide answers in plain language that is easy to understand.
+    - If user asks question in local language, assist user in same language.
+    - Provide source websites or URLs to the user. 
+    - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
 
     {examples}
 
-    History: {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
+    Conversation History:
+    {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
 
     User: {request.prompt}
     Assistant:
     """
 
-    try:
+     try:
+        # Generate a response using the Gemini model
         response = model.generate_content(prompt)
         assistant_response = response.text
+
+        # Add the assistant's response to the session history
         session_data.append({"role": "assistant", "text": assistant_response})
+
+        # Save the updated session data
         save_session(request.session_id, session_data)
+
         return ChatResponse(response=assistant_response)
-    except Exception:
+    except Exception as e:
+        # Rotate to the next key if the current one fails
         new_model = rotate_key()
         if new_model:
-            model = new_model
+            model = new_model  # Update the global 'model' variable
             return await chat_with_law_assistant(request)
-        raise HTTPException(status_code=500, detail="Unable to process request.")
+        else:
+            raise HTTPException(status_code=500, detail="Sorry, I am unable to process your request at the moment.")
