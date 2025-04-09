@@ -254,6 +254,24 @@
                 addMessage('bot', 'Failed to load session history.');
             }
         }
+        function addMessage(role, text) {
+    const messageDiv = document.createElement('div');
+    messageDiv.classList.add('message', role);
+    // Replace newlines with <br> and handle basic markdown
+    let formattedText = text
+        .replace(/\n\n/g, '</p><p>')
+        .replace(/\n/g, '<br>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+        .replace(/• (.+)/g, '<li>$1</li>');
+    formattedText = `<p>${formattedText}</p>`;
+    if (formattedText.includes('<li>')) {
+        formattedText = formattedText.replace(/<p>(<li>.+<\/li>)<\/p>/g, '<ul>$1</ul>');
+    }
+    messageDiv.innerHTML = formattedText;
+    chatDisplay.appendChild(messageDiv);
+    chatDisplay.scrollTop = chatDisplay.scrollHeight;
+    return messageDiv;
+}
 
         // Update History Sidebar
         function updateHistory() {
