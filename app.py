@@ -82,9 +82,39 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
 
+def format_response(text):
+    """Format the response with paragraphs and bullet points."""
+    # Split into paragraphs by double newlines or single newlines if no doubles exist
+    paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
+    formatted = []
+    
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        # Detect if the paragraph starts with a bullet-like marker or heading
+        if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
+            # Handle nested bullet points
+            lines = para.split('\n')
+            formatted_para = []
+            for line in lines:
+                line = line.strip()
+                if line.startswith('* ') or line.startswith('- '):
+                    formatted_para.append(f"• {line[2:]}")  # Convert to bullet
+                elif line.startswith('**') and line.endswith('**'):
+                    formatted_para.append(f"\n**{line[2:-2]}**\n")  # Bold heading
+                else:
+                    formatted_para.append(line)
+            formatted.append('\n'.join(formatted_para))
+        else:
+            formatted.append(para)
+    
+    # Join paragraphs with double newlines for clear separation
+    return '\n\n'.join(formatted)
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_law_assistant(request: ChatRequest):
-    global model  # Declare 'model' as global
+    global model
 
     # Load session data
     session_data = load_session(request.session_id)
@@ -129,6 +159,7 @@ async def chat_with_law_assistant(request: ChatRequest):
     - If user asks question in local language, assist user in same language.
     - Provide source websites or URLs to the user. 
     - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
+    - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
 
     {examples}
 
@@ -142,7 +173,7 @@ async def chat_with_law_assistant(request: ChatRequest):
     try:
         # Generate a response using the Gemini model
         response = model.generate_content(prompt)
-        assistant_response = response.text
+        assistant_response = format_response(response.text)
 
         # Add the assistant's response to the session history
         session_data.append({"role": "assistant", "text": assistant_response})
@@ -155,12 +186,12 @@ async def chat_with_law_assistant(request: ChatRequest):
         # Rotate to the next key if the current one fails
         new_model = rotate_key()
         if new_model:
-            model = new_model  # Update the global 'model' variable
+            model = new_model
             return await chat_with_law_assistant(request)
         else:
             raise HTTPException(status_code=500, detail="Sorry, I am unable to process your request at the moment.")
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.getenv("PORT", 8000))  # For Render compatibility
+    port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
