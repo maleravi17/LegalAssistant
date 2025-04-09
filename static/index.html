@@ -10,13 +10,19 @@
             padding: 20px;
             background-color: #f4f4f9;
         }
-        #chat-container {
-            max-width: 750px;
+        #container {
+            display: flex;
+            max-width: 1200px;
             margin: 0 auto;
+            gap: 20px;
+        }
+        #chat-container {
+            flex: 2;
             background-color: white;
             border-radius: 12px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
             padding: 25px;
+            position: relative;
         }
         #chat-header {
             font-size: 28px;
@@ -75,45 +81,98 @@
         button:hover {
             background-color: #2980b9;
         }
+        #sidebar {
+            flex: 1;
+            background-color: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            padding: 25px;
+            display: none;
+            flex-direction: column;
+        }
+        #sidebar h2 {
+            font-size: 20px;
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        #history-list {
+            list-style: none;
+            padding: 0;
+            overflow-y: auto;
+            flex-grow: 1;
+        }
+        #history-list li {
+            padding: 10px;
+            margin: 5px 0;
+            background-color: #f9f9f9;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        #history-list li:hover {
+            background-color: #e0e0e0;
+        }
+        #controls {
+            position: absolute;
+            top: 25px;
+            left: 25px;
+            display: flex;
+            gap: 10px;
+        }
     </style>
 </head>
 <body>
-    <div id="chat-container">
-        <div id="chat-header">Personal Legal Assistant</div>
-        <div id="chat-display">
-            <div class="message bot">Hi! I’m your Personal Legal Assistant. Ask me about Indian law, IPC sections, or anything legal!</div>
+    <div id="container">
+        <div id="chat-container">
+            <div id="controls">
+                <button id="new-chat">New Chat</button>
+                <button id="history-toggle">History</button>
+            </div>
+            <div id="chat-header">Personal Legal Assistant</div>
+            <div id="chat-display">
+                <div class="message bot">Hi! I’m your Personal Legal Assistant. Ask me about Indian law, IPC sections, or anything legal!</div>
+            </div>
+            <form id="chat-form">
+                <input type="text" id="prompt" placeholder="Ask me anything legal..." required>
+                <button type="submit">Send</button>
+            </form>
         </div>
-        <form id="chat-form">
-            <input type="text" id="prompt" placeholder="Ask me anything legal..." required>
-            <button type="submit">Send</button>
-        </form>
+        <div id="sidebar">
+            <h2>Chat History</h2>
+            <ul id="history-list"></ul>
+        </div>
     </div>
 
     <script>
         const chatDisplay = document.getElementById('chat-display');
         const chatForm = document.getElementById('chat-form');
         const promptInput = document.getElementById('prompt');
+        const newChatBtn = document.getElementById('new-chat');
+        const historyToggleBtn = document.getElementById('history-toggle');
+        const sidebar = document.getElementById('sidebar');
+        const historyList = document.getElementById('history-list');
 
         let sessionId = localStorage.getItem('sessionId') || 'pla_' + Math.random().toString(36).substr(2, 9);
         localStorage.setItem('sessionId', sessionId);
+        let historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
 
-        // Retry fetch function to handle Render spin-up delay
-        async function tryFetch(url, options, retries = 3, delay = 5000) {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch(url, options);
-                    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-                    return response;
-                } catch (err) {
-                    if (i < retries - 1) {
-                        await new Promise(res => setTimeout(res, delay));
-                        continue;
-                    }
-                    throw err;
-                }
-            }
-        }
+        // Load initial chat from current session
+        loadSession(sessionId);
 
+        // New Chat Button
+        newChatBtn.addEventListener('click', () => {
+            sessionId = 'pla_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('sessionId', sessionId);
+            chatDisplay.innerHTML = '<div class="message bot">Hi! I’m your Personal Legal Assistant. Ask me about Indian law, IPC sections, or anything legal!</div>';
+            updateHistory();
+        });
+
+        // History Toggle Button
+        historyToggleBtn.addEventListener('click', () => {
+            sidebar.style.display = sidebar.style.display === 'none' ? 'flex' : 'none';
+            updateHistory();
+        });
+
+        // Chat Form Submission
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const prompt = promptInput.value.trim();
@@ -136,6 +195,7 @@
                 chatDisplay.removeChild(typing);
                 if (response.ok) {
                     addMessage('bot', data.response);
+                    updateHistory();
                 } else {
                     addMessage('bot', 'Error: ' + data.detail);
                 }
@@ -145,6 +205,24 @@
             }
         });
 
+        // Fetch with Retry
+        async function tryFetch(url, options, retries = 3, delay = 5000) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+                    return response;
+                } catch (err) {
+                    if (i < retries - 1) {
+                        await new Promise(res => setTimeout(res, delay));
+                        continue;
+                    }
+                    throw err;
+                }
+            }
+        }
+
+        // Add Message to Display
         function addMessage(role, text) {
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message', role);
@@ -152,6 +230,50 @@
             chatDisplay.appendChild(messageDiv);
             chatDisplay.scrollTop = chatDisplay.scrollHeight;
             return messageDiv;
+        }
+
+        // Load Session from Backend
+        async function loadSession(id) {
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: id,
+                        prompt: "Load this session" // Dummy prompt to retrieve history
+                    })
+                });
+                const data = await response.json();
+                chatDisplay.innerHTML = '';
+                const sessionData = JSON.parse(localStorage.getItem(id)) || [];
+                sessionData.forEach(msg => addMessage(msg.role, msg.text));
+                if (data.response && !sessionData.length) {
+                    addMessage('bot', data.response);
+                }
+            } catch (error) {
+                addMessage('bot', 'Failed to load session history.');
+            }
+        }
+
+        // Update History Sidebar
+        function updateHistory() {
+            historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
+            if (!historySessions.includes(sessionId)) {
+                historySessions.push(sessionId);
+                localStorage.setItem('historySessions', JSON.stringify(historySessions));
+            }
+            historyList.innerHTML = '';
+            historySessions.forEach(id => {
+                const li = document.createElement('li');
+                li.textContent = `Session ${id.slice(4, 10)}`;
+                li.addEventListener('click', () => {
+                    sessionId = id;
+                    localStorage.setItem('sessionId', id);
+                    loadSession(id);
+                    sidebar.style.display = 'none';
+                });
+                historyList.appendChild(li);
+            });
         }
     </script>
 </body>
