@@ -8,6 +8,7 @@ import json
 import os
 from dotenv import load_dotenv
 
+# Load environment variables
 load_dotenv()
 API_KEYS = [
     os.getenv("GEMINI_API_KEY_1"),
@@ -20,6 +21,7 @@ SESSION_FOLDER = "sessions"
 os.makedirs(SESSION_FOLDER, exist_ok=True)
 
 def load_session(session_id):
+    """Load session data from a file."""
     session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
     if os.path.exists(session_file):
         with open(session_file, "r") as f:
@@ -27,11 +29,13 @@ def load_session(session_id):
     return []
 
 def save_session(session_id, session_data):
+    """Save session data to a file."""
     session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
     with open(session_file, "w") as f:
         json.dump(session_data, f)
 
 def initialize_gemini():
+    """Initialize Gemini with the current API key."""
     global current_key_index
     try:
         genai.configure(api_key=API_KEYS[current_key_index])
@@ -40,17 +44,21 @@ def initialize_gemini():
         raise HTTPException(status_code=500, detail=f"Error initializing Gemini: {e}")
 
 def rotate_key():
+    """Rotate to the next API key."""
     global current_key_index
     if current_key_index < len(API_KEYS) - 1:
         current_key_index += 1
         return initialize_gemini()
     else:
-        raise HTTPException(status_code=500, detail="All API keys exhausted.")
+        raise HTTPException(status_code=500, detail="All API keys have been used. Please add more keys.")
 
+# Initialize Gemini model
 model = initialize_gemini()
+
+# --- FastAPI App ---
 app = FastAPI()
 
-# Add CORS middleware to fix 405 error
+# CORS Middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -59,10 +67,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Serve static files (e.g., index.html)
+# Serve static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Root endpoint to serve HTML
 @app.get("/", response_class=HTMLResponse)
 async def read_root():
     with open("static/index.html", "r") as f:
@@ -77,14 +84,20 @@ class ChatResponse(BaseModel):
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_law_assistant(request: ChatRequest):
-    global model
+    global model  # Declare 'model' as global
+
+    # Load session data
     session_data = load_session(request.session_id)
+
+    # Add the user input to the session history
     session_data.append({"role": "user", "text": request.prompt})
 
+    # Two-shot prompting examples
     examples = """
     Example 1:
     User: What is the difference between civil law and criminal law?
-    Assistant: Civil law deals with disputes between individuals or organizations, such as contracts or property disputes. Criminal law involves actions harmful to society, prosecuted by the state, like theft or assault.
+    Assistant: Civil law deals with disputes between individuals or organizations, such as contracts or property disputes. Criminal law, on the other hand, involves actions that are harmful to society and are prosecuted by the state, such as theft or assault.
+
     Example 2:
     User: Can a lawyer represent both parties in a case?
     Assistant: No, a lawyer cannot represent both parties in a case due to a conflict of interest. It is unethical and prohibited by legal professional standards.
@@ -104,14 +117,14 @@ async def chat_with_law_assistant(request: ChatRequest):
     10. **Appeal**: If either party is dissatisfied, they can appeal the decision.
     """
 
-     # Create a context-specific prompt
+    # Create a context-specific prompt
     prompt = f"""
     You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
     You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
     Your task is to provide accurate, related IPC section numbers and Indian Acts, judgements, and professional answers to legal questions.
     If the question is not related to law or related to all above options, politely decline to answer.
 
-     Guidelines:
+    Guidelines:
     - Provide answers in plain language that is easy to understand.
     - If user asks question in local language, assist user in same language.
     - Provide source websites or URLs to the user. 
@@ -126,7 +139,7 @@ async def chat_with_law_assistant(request: ChatRequest):
     Assistant:
     """
 
-     try:
+    try:
         # Generate a response using the Gemini model
         response = model.generate_content(prompt)
         assistant_response = response.text
@@ -146,3 +159,8 @@ async def chat_with_law_assistant(request: ChatRequest):
             return await chat_with_law_assistant(request)
         else:
             raise HTTPException(status_code=500, detail="Sorry, I am unable to process your request at the moment.")
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.getenv("PORT", 8000))  # For Render compatibility
+    uvicorn.run(app, host="0.0.0.0", port=port)
