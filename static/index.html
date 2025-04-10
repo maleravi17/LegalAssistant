@@ -2,48 +2,49 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Personal Legal Assistant</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 10px;
             background-color: #f4f4f9;
         }
         #container {
-            display: flex;
             max-width: 1200px;
             margin: 0 auto;
-            gap: 20px;
+            display: flex;
+            flex-direction: column;
         }
         #chat-container {
-            flex: 2;
             background-color: white;
             border-radius: 12px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            padding: 25px;
+            padding: 15px;
             position: relative;
+            width: 100%;
         }
         #chat-header {
-            font-size: 28px;
+            font-size: 24px;
             font-weight: bold;
             color: #2c3e50;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             text-align: center;
         }
         #chat-display {
-            height: 450px;
+            height: 60vh; /* Adjusts to viewport height */
             overflow-y: auto;
-            padding: 15px;
+            padding: 10px;
             background-color: #f9f9f9;
             border-radius: 8px;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
         .message {
-            margin: 12px 0;
-            padding: 12px 16px;
+            margin: 10px 0;
+            padding: 10px 14px;
             border-radius: 8px;
-            max-width: 85%;
+            max-width: 90%;
             line-height: 1.4;
         }
         .user {
@@ -60,49 +61,55 @@
         }
         #chat-form {
             display: flex;
-            gap: 12px;
+            gap: 10px;
         }
         #prompt {
             flex-grow: 1;
-            padding: 12px;
+            padding: 10px;
             border: 1px solid #d1d5db;
             border-radius: 6px;
-            font-size: 16px;
+            font-size: 14px;
         }
         button {
-            padding: 12px 24px;
+            padding: 10px 20px;
             background-color: #3498db;
             color: white;
             border: none;
             border-radius: 6px;
             cursor: pointer;
-            font-size: 16px;
+            font-size: 14px;
         }
         button:hover {
             background-color: #2980b9;
         }
+        #controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
         #sidebar {
-            flex: 1;
             background-color: white;
             border-radius: 12px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            padding: 25px;
+            padding: 15px;
             display: none;
-            flex-direction: column;
+            width: 100%;
+            max-height: 50vh;
+            overflow-y: auto;
+            margin-top: 10px;
         }
         #sidebar h2 {
-            font-size: 20px;
+            font-size: 18px;
             color: #2c3e50;
-            margin-bottom: 15px;
+            margin-bottom: 10px;
         }
         #history-list {
             list-style: none;
             padding: 0;
-            overflow-y: auto;
-            flex-grow: 1;
         }
         #history-list li {
-            padding: 10px;
+            padding: 8px;
             margin: 5px 0;
             background-color: #f9f9f9;
             border-radius: 6px;
@@ -111,12 +118,32 @@
         #history-list li:hover {
             background-color: #e0e0e0;
         }
-        #controls {
-            position: absolute;
-            top: 25px;
-            left: 25px;
-            display: flex;
-            gap: 10px;
+
+        /* Desktop Layout */
+        @media (min-width: 768px) {
+            #container {
+                flex-direction: row;
+                gap: 20px;
+            }
+            #chat-container {
+                flex: 2;
+                padding: 25px;
+            }
+            #sidebar {
+                flex: 1;
+                margin-top: 0;
+            }
+            #chat-header {
+                font-size: 28px;
+            }
+            #prompt, button {
+                font-size: 16px;
+            }
+            #controls {
+                position: absolute;
+                top: 25px;
+                left: 25px;
+            }
         }
     </style>
 </head>
@@ -155,10 +182,8 @@
         localStorage.setItem('sessionId', sessionId);
         let historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
 
-        // Load initial chat from current session
         loadSession(sessionId);
 
-        // New Chat Button
         newChatBtn.addEventListener('click', () => {
             sessionId = 'pla_' + Math.random().toString(36).substr(2, 9);
             localStorage.setItem('sessionId', sessionId);
@@ -166,13 +191,11 @@
             updateHistory();
         });
 
-        // History Toggle Button
         historyToggleBtn.addEventListener('click', () => {
-            sidebar.style.display = sidebar.style.display === 'none' ? 'flex' : 'none';
+            sidebar.style.display = sidebar.style.display === 'none' ? 'block' : 'none';
             updateHistory();
         });
 
-        // Chat Form Submission
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const prompt = promptInput.value.trim();
@@ -205,7 +228,6 @@
             }
         });
 
-        // Fetch with Retry
         async function tryFetch(url, options, retries = 3, delay = 5000) {
             for (let i = 0; i < retries; i++) {
                 try {
@@ -222,17 +244,24 @@
             }
         }
 
-        // Add Message to Display
         function addMessage(role, text) {
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message', role);
-            messageDiv.textContent = text;
+            let formattedText = text
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/• (.+)/g, '<li>$1</li>');
+            formattedText = `<p>${formattedText}</p>`;
+            if (formattedText.includes('<li>')) {
+                formattedText = formattedText.replace(/<p>(<li>.+<\/li>)<\/p>/g, '<ul>$1</ul>');
+            }
+            messageDiv.innerHTML = formattedText;
             chatDisplay.appendChild(messageDiv);
             chatDisplay.scrollTop = chatDisplay.scrollHeight;
             return messageDiv;
         }
 
-        // Load Session from Backend
         async function loadSession(id) {
             try {
                 const response = await fetch('/chat', {
@@ -240,7 +269,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         session_id: id,
-                        prompt: "Load this session" // Dummy prompt to retrieve history
+                        prompt: "Load this session"
                     })
                 });
                 const data = await response.json();
@@ -254,26 +283,7 @@
                 addMessage('bot', 'Failed to load session history.');
             }
         }
-        function addMessage(role, text) {
-    const messageDiv = document.createElement('div');
-    messageDiv.classList.add('message', role);
-    // Replace newlines with <br> and handle basic markdown
-    let formattedText = text
-        .replace(/\n\n/g, '</p><p>')
-        .replace(/\n/g, '<br>')
-        .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-        .replace(/• (.+)/g, '<li>$1</li>');
-    formattedText = `<p>${formattedText}</p>`;
-    if (formattedText.includes('<li>')) {
-        formattedText = formattedText.replace(/<p>(<li>.+<\/li>)<\/p>/g, '<ul>$1</ul>');
-    }
-    messageDiv.innerHTML = formattedText;
-    chatDisplay.appendChild(messageDiv);
-    chatDisplay.scrollTop = chatDisplay.scrollHeight;
-    return messageDiv;
-}
 
-        // Update History Sidebar
         function updateHistory() {
             historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
             if (!historySessions.includes(sessionId)) {
