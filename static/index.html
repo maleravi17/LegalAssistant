@@ -140,6 +140,7 @@
             display: flex;
             gap: 10px;
             margin-bottom: 0;
+            align-items: flex-end; /* Align items to the bottom */
         }
         #prompt {
             flex-grow: 1;
@@ -171,34 +172,53 @@
         #prompt:focus.light {
             border-color: #3498db;
         }
-        button {
-            padding: 10px 20px;
+        .send-btn, .upload-btn {
+            padding: 10px;
             border: none;
-            border-radius: 6px;
+            border-radius: 50%;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 16px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
             transition: background-color 0.2s;
         }
-        button.dark {
+        .send-btn.dark {
             background-color: #1e88e5;
             color: white;
         }
-        button.light {
+        .send-btn.light {
             background-color: #3498db;
             color: white;
         }
-        button:hover.dark {
+        .send-btn:hover.dark {
             background-color: #1565c0;
         }
-        button:hover.light {
+        .send-btn:hover.light {
             background-color: #2980b9;
+        }
+        .upload-btn.dark {
+            background-color: #555555;
+            color: #e0e0e0;
+        }
+        .upload-btn.light {
+            background-color: #d1d5db;
+            color: #2c3e50;
+        }
+        .upload-btn:hover.dark {
+            background-color: #666666;
+        }
+        .upload-btn:hover.light {
+            background-color: #b0b7c2;
         }
         #controls {
             display: flex;
             gap: 10px;
             margin-bottom: 15px;
             flex-wrap: wrap;
-            justify-content: flex-end; /* Align controls to the right */
+            justify-content: flex-end;
         }
         .theme-switch {
             display: flex;
@@ -215,7 +235,7 @@
         }
         .theme-switch .switch {
             position: relative;
-            width: 40px; /* Adjusted for a compact toggle */
+            width: 40px;
             height: 20px;
             background-color: #ccc;
             border-radius: 20px;
@@ -240,7 +260,7 @@
             transition: transform 0.3s;
         }
         .theme-switch input[type="checkbox"]:checked + .switch::after {
-            transform: translateX(20px); /* Move to "Dark" side */
+            transform: translateX(20px);
         }
         .theme-switch input[type="checkbox"]:checked + .switch {
             background-color: #555;
@@ -330,13 +350,13 @@
             #chat-header {
                 font-size: 28px;
             }
-            #prompt, button {
+            #prompt, .send-btn, .upload-btn {
                 font-size: 16px;
             }
             #controls {
                 position: absolute;
                 top: 25px;
-                right: 25px; /* Align to right on desktop */
+                right: 25px;
             }
         }
     </style>
@@ -362,7 +382,9 @@
             </div>
             <form id="chat-form">
                 <textarea id="prompt" class="dark" placeholder="Ask me anything legal..." required></textarea>
-                <button type="submit" class="dark">Send</button>
+                <label class="upload-btn dark" for="file-upload">+</label>
+                <input type="file" id="file-upload" style="display: none;" accept="image/*,application/pdf">
+                <button type="submit" class="send-btn dark">↑</button>
             </form>
         </div>
         <div id="sidebar" class="dark">
@@ -379,6 +401,7 @@
         const newChatBtn = document.getElementById('new-chat');
         const historyToggleBtn = document.getElementById('history-toggle');
         const themeToggle = document.getElementById('theme-toggle');
+        const fileUpload = document.getElementById('file-upload');
         const sidebar = document.getElementById('sidebar');
         const closeSidebarBtn = document.getElementById('close-sidebar');
         const historyList = document.getElementById('history-list');
@@ -404,6 +427,22 @@
             isDarkTheme = !themeToggle.checked;
             applyTheme(isDarkTheme);
             localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
+        });
+
+        // File upload handling
+        fileUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const fileContent = event.target.result;
+                    addMessage('user', `Uploaded ${file.name}: [Content preview not shown, processed by bot]`);
+                    // Simulate bot response (replace with actual processing logic)
+                    addMessage('bot', `Thank you for uploading ${file.name}. I’m analyzing it. Would you like more information?`, true);
+                };
+                reader.readAsDataURL(file); // For images, use readAsText for PDFs
+                fileUpload.value = ''; // Reset file input
+            }
         });
 
         newChatBtn.addEventListener('click', () => {
@@ -434,33 +473,52 @@
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const prompt = promptInput.value.trim();
-            if (!prompt) return;
+            if (!prompt && !fileUpload.files.length) return;
 
-            addMessage('user', prompt);
-            promptInput.value = '';
-            promptInput.style.height = 'auto';
-            const typing = addMessage('bot', 'Decoding legal mysteries...');
+            if (prompt) {
+                addMessage('user', prompt);
+                promptInput.value = '';
+                promptInput.style.height = 'auto';
+                const typing = addMessage('bot', 'Decoding legal mysteries...');
 
-            try {
-                const response = await tryFetch('/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        session_id: sessionId,
-                        prompt: prompt
-                    })
-                });
-                const data = await response.json();
-                chatDisplay.removeChild(typing);
-                if (response.ok) {
-                    addMessage('bot', data.response, true);
-                    updateHistory();
-                } else {
-                    addMessage('bot', 'Error: ' + data.detail);
+                try {
+                    const response = await tryFetch('/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            session_id: sessionId,
+                            prompt: prompt
+                        })
+                    });
+                    const data = await response.json();
+                    chatDisplay.removeChild(typing);
+                    if (response.ok) {
+                        const fullConversation = Array.from(chatDisplay.children)
+                            .map(msg => msg.textContent)
+                            .join('\n');
+                        addMessage('bot', `Thank you for your question. ${data.response} Would you like more information? [Download as Doc]`, true);
+                        const lastMessage = chatDisplay.lastChild;
+                        const downloadBtn = document.createElement('button');
+                        downloadBtn.textContent = 'Download as Doc';
+                        downloadBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+                        downloadBtn.onclick = () => {
+                            const blob = new Blob([fullConversation], { type: 'text/plain' });
+                            const url = window.URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `legal_chat_${new Date().toISOString().slice(0, 10)}.txt`;
+                            a.click();
+                            window.URL.revokeObjectURL(url);
+                        };
+                        lastMessage.appendChild(downloadBtn);
+                        updateHistory();
+                    } else {
+                        addMessage('bot', 'Error: ' + data.detail);
+                    }
+                } catch (error) {
+                    chatDisplay.removeChild(typing);
+                    addMessage('bot', 'Sorry, I couldn’t connect to the server. Please try again.');
                 }
-            } catch (error) {
-                chatDisplay.removeChild(typing);
-                addMessage('bot', 'Sorry, I couldn’t connect to the server. Please try again.');
             }
         });
 
@@ -489,7 +547,8 @@
                 .replace(/\n\n/g, '</p><p>')
                 .replace(/\n/g, '<br>')
                 .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                .replace(/• (.+)/g, '<li>$1</li>');
+                .replace(/• (.+)/g, '<li>$1</li>')
+                .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
             formattedText = `<p>${formattedText}</p>`;
             if (formattedText.includes('<li>')) {
                 formattedText = formattedText.replace(/<p>(<li>.+<\/li>)<\/p>/g, '<ul>$1</ul>');
@@ -497,7 +556,6 @@
             contentDiv.innerHTML = formattedText;
             messageDiv.appendChild(contentDiv);
 
-            // Adjust message height dynamically
             messageDiv.style.height = 'auto';
             messageDiv.style.minHeight = '0';
 
@@ -605,7 +663,7 @@
                 li.classList.toggle('dark', isDarkTheme);
                 li.classList.toggle('light', !isDarkTheme);
             });
-            themeToggle.checked = !isDarkTheme; // Sync toggle state with theme
+            themeToggle.checked = !isDarkTheme;
         }
     </script>
 </body>
