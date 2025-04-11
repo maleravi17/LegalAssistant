@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Personal Legal Assistant</title>
+    <title>Lexi</title>
     <style>
         body {
             font-family: 'Roboto', Arial, sans-serif;
@@ -42,9 +42,12 @@
         #chat-header {
             font-size: 24px;
             font-weight: 500;
-            margin-bottom: 15px;
-            text-align: center;
+            margin-bottom: 10px; /* Reduced from 15px */
+            text-align: left; /* Changed to left alignment */
             transition: color 0.3s;
+            position: absolute;
+            top: 15px;
+            left: 15px;
         }
         #chat-header.dark {
             color: #ffffff;
@@ -110,12 +113,12 @@
         }
         .actions {
             display: flex;
-            gap: 5px;
-            margin-top: 5px;
-            justify-content: flex-start;
+            gap: 2px; /* Reduced from 5px */
+            margin-top: 2px; /* Reduced from 5px */
+            justify-content: flex-end; /* Align to right */
         }
         .action-btn {
-            padding: 5px 10px;
+            padding: 4px 8px; /* Reduced padding */
             font-size: 12px;
             border: none;
             border-radius: 4px;
@@ -138,13 +141,13 @@
         }
         #chat-form {
             display: flex;
-            gap: 10px;
-            margin-bottom: 0;
-            align-items: flex-end; /* Align items to the bottom */
+            gap: 5px;
+            margin-bottom: 2px; /* Reduced from 10px to minimize space after input box */
+            align-items: flex-end;
         }
         #prompt {
             flex-grow: 1;
-            padding: 10px;
+            padding: 10px; /* Reverted to original 10px */
             border-radius: 6px;
             font-size: 14px;
             resize: none;
@@ -173,13 +176,13 @@
             border-color: #3498db;
         }
         .send-btn, .upload-btn {
-            padding: 10px;
+            padding: 10px; /* Reverted to original 10px */
             border: none;
             border-radius: 50%;
             cursor: pointer;
             font-size: 16px;
-            width: 40px;
-            height: 40px;
+            width: 40px; /* Reverted to original 40px */
+            height: 40px; /* Reverted to original 40px */
             display: flex;
             align-items: center;
             justify-content: center;
@@ -216,7 +219,7 @@
         #controls {
             display: flex;
             gap: 10px;
-            margin-bottom: 15px;
+            margin-bottom: 10px; /* Reduced from 15px */
             flex-wrap: wrap;
             justify-content: flex-end;
         }
@@ -376,9 +379,9 @@
                     </label>
                 </div>
             </div>
-            <div id="chat-header" class="dark">Personal Legal Assistant</div>
+            <div id="chat-header" class="dark">Lexi</div>
             <div id="chat-display" class="dark">
-                <div class="message bot dark">Hi! I’m your Personal Legal Assistant. Ask me about Indian law, IPC sections, or anything legal!</div>
+                <div class="message bot dark">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>
             </div>
             <form id="chat-form">
                 <textarea id="prompt" class="dark" placeholder="Ask me anything legal..." required></textarea>
@@ -448,7 +451,7 @@
         newChatBtn.addEventListener('click', () => {
             sessionId = 'pla_' + Math.random().toString(36).substr(2, 9);
             localStorage.setItem('sessionId', sessionId);
-            chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Personal Legal Assistant. Ask me about Indian law, IPC sections, or anything legal!</div>';
+            chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
             updateHistory();
             sidebar.classList.remove('open');
             sidebar.style.display = 'none';
@@ -493,24 +496,29 @@
                     const data = await response.json();
                     chatDisplay.removeChild(typing);
                     if (response.ok) {
-                        const fullConversation = Array.from(chatDisplay.children)
-                            .map(msg => msg.textContent)
-                            .join('\n');
-                        addMessage('bot', `Thank you for your question. ${data.response} Would you like more information? [Download as Doc]`, true);
+                        const botResponse = `Thank you for your question. ${data.response} Would you like more information?`;
+                        addMessage('bot', botResponse, true);
                         const lastMessage = chatDisplay.lastChild;
                         const downloadBtn = document.createElement('button');
-                        downloadBtn.textContent = 'Download as Doc';
+                        downloadBtn.textContent = '↓'; // Download symbol
                         downloadBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
                         downloadBtn.onclick = () => {
-                            const blob = new Blob([fullConversation], { type: 'text/plain' });
+                            const blob = new Blob([data.response], { type: 'text/plain' }); // Only bot response
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement('a');
                             a.href = url;
-                            a.download = `legal_chat_${new Date().toISOString().slice(0, 10)}.txt`;
+                            a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`;
                             a.click();
                             window.URL.revokeObjectURL(url);
                         };
+                        const shareBtn = document.createElement('button');
+                        shareBtn.textContent = '↗'; // Share symbol
+                        shareBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+                        shareBtn.onclick = () => {
+                            navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href });
+                        };
                         lastMessage.appendChild(downloadBtn);
+                        lastMessage.appendChild(shareBtn);
                         updateHistory();
                     } else {
                         addMessage('bot', 'Error: ' + data.detail);
@@ -562,11 +570,6 @@
             if (isBotWithActions) {
                 const actionsDiv = document.createElement('div');
                 actionsDiv.classList.add('actions');
-                actionsDiv.innerHTML = `
-                    <button class="action-btn ${isDarkTheme ? 'dark' : 'light'}" onclick="alert('Liked!')">👍</button>
-                    <button class="action-btn ${isDarkTheme ? 'dark' : 'light'}" onclick="alert('Disliked!')">👎</button>
-                    <button class="action-btn ${isDarkTheme ? 'dark' : 'light'}" onclick="navigator.share({text: '${text.slice(0, 50)}...', url: window.location.href})">Share</button>
-                `;
                 messageDiv.appendChild(actionsDiv);
             }
 
