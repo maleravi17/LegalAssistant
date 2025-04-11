@@ -198,18 +198,52 @@
             gap: 10px;
             margin-bottom: 15px;
             flex-wrap: wrap;
+            justify-content: flex-end; /* Align controls to the right */
         }
-        #theme-slider {
-            margin-left: auto;
-            width: 60px; /* Reduced from 100px to 60px */
-            height: 15px; /* Reduced from 20px to 15px */
+        .theme-switch {
+            display: flex;
+            align-items: center;
+        }
+        .theme-switch label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 14px;
+        }
+        .theme-switch input[type="checkbox"] {
+            display: none;
+        }
+        .theme-switch .switch {
+            position: relative;
+            width: 40px; /* Adjusted for a compact toggle */
+            height: 20px;
+            background-color: #ccc;
+            border-radius: 20px;
+            cursor: pointer;
             transition: background-color 0.3s;
         }
-        #theme-slider.dark {
-            background-color: #555555;
+        .theme-switch .switch.dark {
+            background-color: #555;
         }
-        #theme-slider.light {
+        .theme-switch .switch.light {
             background-color: #d1d5db;
+        }
+        .theme-switch .switch::after {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background-color: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
+        }
+        .theme-switch input[type="checkbox"]:checked + .switch::after {
+            transform: translateX(20px); /* Move to "Dark" side */
+        }
+        .theme-switch input[type="checkbox"]:checked + .switch {
+            background-color: #555;
         }
         #sidebar {
             border-radius: 12px;
@@ -302,10 +336,7 @@
             #controls {
                 position: absolute;
                 top: 25px;
-                left: 25px;
-            }
-            #theme-slider {
-                width: 80px; /* Reduced from 150px to 80px */
+                right: 25px; /* Align to right on desktop */
             }
         }
     </style>
@@ -316,7 +347,14 @@
             <div id="controls">
                 <button id="new-chat" class="dark">New Chat</button>
                 <button id="history-toggle" class="dark">History</button>
-                <input type="range" id="theme-slider" class="dark" min="0" max="100" value="0">
+                <div class="theme-switch">
+                    <label>
+                        <input type="checkbox" id="theme-toggle">
+                        <span class="switch"></span>
+                        <span>Light</span>
+                        <span>Dark</span>
+                    </label>
+                </div>
             </div>
             <div id="chat-header" class="dark">Personal Legal Assistant</div>
             <div id="chat-display" class="dark">
@@ -340,7 +378,7 @@
         const promptInput = document.getElementById('prompt');
         const newChatBtn = document.getElementById('new-chat');
         const historyToggleBtn = document.getElementById('history-toggle');
-        const themeSlider = document.getElementById('theme-slider');
+        const themeToggle = document.getElementById('theme-toggle');
         const sidebar = document.getElementById('sidebar');
         const closeSidebarBtn = document.getElementById('close-sidebar');
         const historyList = document.getElementById('history-list');
@@ -352,7 +390,7 @@
         let historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
         let isDarkTheme = localStorage.getItem('theme') !== 'light';
 
-        applyTheme(isDarkTheme ? 0 : 100);
+        applyTheme(isDarkTheme);
         loadSession(sessionId);
 
         // Dynamic textarea height while typing
@@ -361,11 +399,10 @@
             promptInput.style.height = `${promptInput.scrollHeight}px`;
         });
 
-        // Theme slider
-        themeSlider.addEventListener('input', (e) => {
-            const value = e.target.value;
-            isDarkTheme = value < 50;
-            applyTheme(value);
+        // Theme toggle switch
+        themeToggle.addEventListener('change', () => {
+            isDarkTheme = !themeToggle.checked;
+            applyTheme(isDarkTheme);
             localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
         });
 
@@ -534,9 +571,8 @@
             }
         }
 
-        function applyTheme(value) {
-            const darkIntensity = 1 - (value / 100);
-            isDarkTheme = darkIntensity > 0.5;
+        function applyTheme(dark) {
+            isDarkTheme = dark;
             document.body.classList.toggle('dark', isDarkTheme);
             document.body.classList.toggle('light', !isDarkTheme);
             chatContainer.classList.toggle('dark', isDarkTheme);
@@ -555,8 +591,6 @@
             newChatBtn.classList.toggle('light', !isDarkTheme);
             historyToggleBtn.classList.toggle('dark', isDarkTheme);
             historyToggleBtn.classList.toggle('light', !isDarkTheme);
-            themeSlider.classList.toggle('dark', isDarkTheme);
-            themeSlider.classList.toggle('light', !isDarkTheme);
             closeSidebarBtn.classList.toggle('dark', isDarkTheme);
             closeSidebarBtn.classList.toggle('light', !isDarkTheme);
             document.querySelectorAll('.message').forEach(msg => {
@@ -571,6 +605,7 @@
                 li.classList.toggle('dark', isDarkTheme);
                 li.classList.toggle('light', !isDarkTheme);
             });
+            themeToggle.checked = !isDarkTheme; // Sync toggle state with theme
         }
     </script>
 </body>
