@@ -68,17 +68,17 @@
         }
         .message {
             margin: 8px 0;
-            padding: 10px 14px;
+            padding: 5px 8px;
             border-radius: 8px;
             max-width: 90%;
             line-height: 1.4;
             position: relative;
             display: flex;
             flex-direction: column;
-            align-items: flex-end;
+            align-items: flex-start;
             transition: background-color 0.3s, color 0.3s;
-            word-wrap: break-word; /* Ensures text wraps properly */
-            overflow-wrap: break-word; /* Modern equivalent for better wrapping */
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
         .user.dark {
             background-color: #1e88e5;
@@ -89,7 +89,7 @@
             color: white;
         }
         .bot.dark {
-            background-content: #424242;
+            background-color: #424242;
             color: #e0e0e0;
         }
         .bot.light {
@@ -97,16 +97,16 @@
             color: #2c3e50;
         }
         .user {
-            text-align: right;
+            text-align: left;
             white-space: pre-wrap;
         }
         .bot {
-            margin-right: auto;
+            margin-left: auto;
             text-align: left;
         }
         .message-content {
-            text-align: right;
-            width: 100%; /* Ensure content takes full width for dynamic height */
+            text-align: left;
+            width: 100%;
         }
         .actions {
             display: flex;
@@ -201,8 +201,8 @@
         }
         #theme-slider {
             margin-left: auto;
-            width: 100px;
-            height: 20px;
+            width: 60px; /* Reduced from 100px to 60px */
+            height: 15px; /* Reduced from 20px to 15px */
             transition: background-color 0.3s;
         }
         #theme-slider.dark {
@@ -305,7 +305,7 @@
                 left: 25px;
             }
             #theme-slider {
-                width: 150px;
+                width: 80px; /* Reduced from 150px to 80px */
             }
         }
     </style>
@@ -401,7 +401,7 @@
 
             addMessage('user', prompt);
             promptInput.value = '';
-            promptInput.style.height = 'auto'; // Reset height after sending
+            promptInput.style.height = 'auto';
             const typing = addMessage('bot', 'Decoding legal mysteries...');
 
             try {
@@ -462,7 +462,7 @@
 
             // Adjust message height dynamically
             messageDiv.style.height = 'auto';
-            messageDiv.style.minHeight = '0'; // Remove any fixed min-height
+            messageDiv.style.minHeight = '0';
 
             if (isBotWithActions) {
                 const actionsDiv = document.createElement('div');
