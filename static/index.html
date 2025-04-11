@@ -24,14 +24,19 @@
             margin: 0 auto;
             display: flex;
             flex-direction: column;
+            height: 100vh; /* Ensure container takes full height */
         }
         #chat-container {
             border-radius: 12px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            padding: 15px;
+            padding: 10px; /* Reduced from 15px */
             position: relative;
             width: 100%;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
             transition: background-color 0.3s;
+            margin-bottom: 0; /* Remove extra bottom margin */
         }
         #chat-container.dark {
             background-color: #2b2b2b;
@@ -42,12 +47,13 @@
         #chat-header {
             font-size: 24px;
             font-weight: 500;
-            margin-bottom: 10px; /* Reduced from 15px */
-            text-align: left; /* Changed to left alignment */
+            margin-bottom: 5px; /* Reduced from 10px */
+            text-align: left;
             transition: color 0.3s;
             position: absolute;
-            top: 15px;
-            left: 15px;
+            top: 10px; /* Reduced from 15px */
+            left: 10px; /* Reduced from 15px */
+            z-index: 1; /* Ensure header stays above other elements */
         }
         #chat-header.dark {
             color: #ffffff;
@@ -55,13 +61,63 @@
         #chat-header.light {
             color: #2c3e50;
         }
+        #controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 5px; /* Reduced from 10px */
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            position: absolute;
+            top: 10px; /* Reduced from 25px */
+            right: 10px; /* Reduced from 25px */
+            z-index: 1; /* Ensure controls stay above chat display */
+        }
+        .control-btn {
+            padding: 5px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 18px;
+            transition: color 0.3s;
+        }
+        .control-btn.dark {
+            color: #e0e0e0;
+        }
+        .control-btn.light {
+            color: #2c3e50;
+        }
+        .control-btn:hover {
+            color: #1e88e5;
+        }
+        .control-btn::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            background-color: #333;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s;
+            z-index: 2;
+        }
+        .control-btn:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
         #chat-display {
-            height: 60vh;
+            height: calc(60vh - 20px); /* Adjusted to account for reduced padding */
             overflow-y: auto;
-            padding: 10px;
+            padding: 5px; /* Reduced from 10px */
             border-radius: 8px;
             margin-bottom: 5px;
             transition: background-color 0.3s;
+            flex-grow: 1;
         }
         #chat-display.dark {
             background-color: #333333;
@@ -70,8 +126,8 @@
             background-color: #f9f9f9;
         }
         .message {
-            margin: 8px 0;
-            padding: 5px 8px;
+            margin: 5px 0; /* Reduced from 8px */
+            padding: 5px; /* Reduced from 8px */
             border-radius: 8px;
             max-width: 90%;
             line-height: 1.4;
@@ -113,17 +169,18 @@
         }
         .actions {
             display: flex;
-            gap: 2px; /* Reduced from 5px */
-            margin-top: 2px; /* Reduced from 5px */
-            justify-content: flex-end; /* Align to right */
+            gap: 2px;
+            margin-top: 2px;
+            justify-content: flex-end;
         }
         .action-btn {
-            padding: 4px 8px; /* Reduced padding */
+            padding: 4px 8px;
             font-size: 12px;
             border: none;
             border-radius: 4px;
             cursor: pointer;
             transition: background-color 0.3s;
+            position: relative;
         }
         .action-btn.dark {
             background-color: #555555;
@@ -139,15 +196,37 @@
         .action-btn:hover.light {
             background-color: #b0b7c2;
         }
+        .action-btn::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            background-color: #333;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s;
+            z-index: 2;
+        }
+        .action-btn:hover::after {
+            opacity: 1;
+            visibility: visible;
+        }
         #chat-form {
             display: flex;
             gap: 5px;
-            margin-bottom: 2px; /* Reduced from 10px to minimize space after input box */
+            margin-bottom: 2px;
             align-items: flex-end;
+            padding: 0; /* Remove padding to reduce space */
         }
         #prompt {
             flex-grow: 1;
-            padding: 10px; /* Reverted to original 10px */
+            padding: 10px;
             border-radius: 6px;
             font-size: 14px;
             resize: none;
@@ -176,13 +255,13 @@
             border-color: #3498db;
         }
         .send-btn, .upload-btn {
-            padding: 10px; /* Reverted to original 10px */
+            padding: 10px;
             border: none;
             border-radius: 50%;
             cursor: pointer;
             font-size: 16px;
-            width: 40px; /* Reverted to original 40px */
-            height: 40px; /* Reverted to original 40px */
+            width: 40px;
+            height: 40px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -216,27 +295,20 @@
         .upload-btn:hover.light {
             background-color: #b0b7c2;
         }
-        #controls {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px; /* Reduced from 15px */
-            flex-wrap: wrap;
-            justify-content: flex-end;
-        }
-        .theme-switch {
+        #theme-switch {
             display: flex;
             align-items: center;
         }
-        .theme-switch label {
+        #theme-switch label {
             display: flex;
             align-items: center;
             gap: 5px;
             font-size: 14px;
         }
-        .theme-switch input[type="checkbox"] {
+        #theme-switch input[type="checkbox"] {
             display: none;
         }
-        .theme-switch .switch {
+        #theme-switch .switch {
             position: relative;
             width: 40px;
             height: 20px;
@@ -245,13 +317,13 @@
             cursor: pointer;
             transition: background-color 0.3s;
         }
-        .theme-switch .switch.dark {
+        #theme-switch .switch.dark {
             background-color: #555;
         }
-        .theme-switch .switch.light {
+        #theme-switch .switch.light {
             background-color: #d1d5db;
         }
-        .theme-switch .switch::after {
+        #theme-switch .switch::after {
             content: '';
             position: absolute;
             width: 16px;
@@ -262,10 +334,10 @@
             left: 2px;
             transition: transform 0.3s;
         }
-        .theme-switch input[type="checkbox"]:checked + .switch::after {
+        #theme-switch input[type="checkbox"]:checked + .switch::after {
             transform: translateX(20px);
         }
-        .theme-switch input[type="checkbox"]:checked + .switch {
+        #theme-switch input[type="checkbox"]:checked + .switch {
             background-color: #555;
         }
         #sidebar {
@@ -341,7 +413,7 @@
             }
             #chat-container {
                 flex: 2;
-                padding: 25px;
+                padding: 15px;
             }
             #sidebar {
                 flex: 1;
@@ -357,9 +429,8 @@
                 font-size: 16px;
             }
             #controls {
-                position: absolute;
-                top: 25px;
-                right: 25px;
+                top: 15px;
+                right: 15px;
             }
         }
     </style>
@@ -368,9 +439,9 @@
     <div id="container">
         <div id="chat-container" class="dark">
             <div id="controls">
-                <button id="new-chat" class="dark">New Chat</button>
-                <button id="history-toggle" class="dark">History</button>
-                <div class="theme-switch">
+                <button id="new-chat" class="control-btn dark" data-tooltip="New Chat">➕</button>
+                <button id="history-toggle" class="control-btn dark" data-tooltip="History">📜</button>
+                <div id="theme-switch">
                     <label>
                         <input type="checkbox" id="theme-toggle">
                         <span class="switch"></span>
@@ -499,11 +570,49 @@
                         const botResponse = `Thank you for your question. ${data.response} Would you like more information?`;
                         addMessage('bot', botResponse, true);
                         const lastMessage = chatDisplay.lastChild;
+                        const regenerateBtn = document.createElement('button');
+                        regenerateBtn.textContent = '🔄';
+                        regenerateBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+                        regenerateBtn.setAttribute('data-tooltip', 'Regenerate');
+                        regenerateBtn.onclick = () => {
+                            // Add regenerate logic here
+                            alert('Regenerate clicked!');
+                        };
+                        const copyBtn = document.createElement('button');
+                        copyBtn.textContent = '📋';
+                        copyBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+                        copyBtn.setAttribute('data-tooltip', 'Copy');
+                        copyBtn.onclick = () => {
+                            navigator.clipboard.writeText(data.response);
+                            alert('Copied to clipboard!');
+                        };
+                        const shareBtn = document.createElement('button');
+                        shareBtn.textContent = '↗';
+                        shareBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+                        shareBtn.setAttribute('data-tooltip', 'Share');
+                        shareBtn.onclick = () => {
+                            navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href });
+                        };
+                        const loveBtn = document.createElement('button');
+                        loveBtn.textContent = '❤️';
+                        loveBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+                        loveBtn.setAttribute('data-tooltip', 'Love this');
+                        loveBtn.onclick = () => {
+                            alert('Thanks for the love!');
+                        };
+                        const improveBtn = document.createElement('button');
+                        improveBtn.textContent = '👎';
+                        improveBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+                        improveBtn.setAttribute('data-tooltip', 'Needs Improvement');
+                        improveBtn.onclick = () => {
+                            alert('Feedback noted!');
+                        };
                         const downloadBtn = document.createElement('button');
-                        downloadBtn.textContent = '↓'; // Download symbol
+                        downloadBtn.textContent = '↓';
                         downloadBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+                        downloadBtn.setAttribute('data-tooltip', 'Download');
                         downloadBtn.onclick = () => {
-                            const blob = new Blob([data.response], { type: 'text/plain' }); // Only bot response
+                            const blob = new Blob([data.response], { type: 'text/plain' });
                             const url = window.URL.createObjectURL(blob);
                             const a = document.createElement('a');
                             a.href = url;
@@ -511,14 +620,12 @@
                             a.click();
                             window.URL.revokeObjectURL(url);
                         };
-                        const shareBtn = document.createElement('button');
-                        shareBtn.textContent = '↗'; // Share symbol
-                        shareBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                        shareBtn.onclick = () => {
-                            navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href });
-                        };
-                        lastMessage.appendChild(downloadBtn);
-                        lastMessage.appendChild(shareBtn);
+                        lastMessage.querySelector('.actions').appendChild(regenerateBtn);
+                        lastMessage.querySelector('.actions').appendChild(copyBtn);
+                        lastMessage.querySelector('.actions').appendChild(shareBtn);
+                        lastMessage.querySelector('.actions').appendChild(loveBtn);
+                        lastMessage.querySelector('.actions').appendChild(improveBtn);
+                        lastMessage.querySelector('.actions').appendChild(downloadBtn);
                         updateHistory();
                     } else {
                         addMessage('bot', 'Error: ' + data.detail);
@@ -659,6 +766,10 @@
                 msg.classList.toggle('light', !isDarkTheme);
             });
             document.querySelectorAll('.action-btn').forEach(btn => {
+                btn.classList.toggle('dark', isDarkTheme);
+                btn.classList.toggle('light', !isDarkTheme);
+            });
+            document.querySelectorAll('.control-btn').forEach(btn => {
                 btn.classList.toggle('dark', isDarkTheme);
                 btn.classList.toggle('light', !isDarkTheme);
             });
