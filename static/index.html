@@ -822,6 +822,32 @@
             });
             themeToggle.checked = !isDarkTheme;
         }
+        async function loadSession(id) {
+    try {
+        const response = await tryFetch('/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                session_id: id,
+                prompt: "Load this session"
+            })
+        });
+        const data = await response.json();
+        chatDisplay.innerHTML = '';
+        const sessionData = JSON.parse(localStorage.getItem(id)) || [];
+        sessionData.forEach(msg => addMessage(msg.role, msg.text, msg.role === 'bot'));
+        if (data.response && !sessionData.length) {
+            if (data.response.includes("Session loaded successfully.")) {
+                // No initial message if just loading
+            } else {
+                addMessage('bot', data.response, true);
+            }
+        }
+    } catch (error) {
+        addMessage('bot', 'Failed to load session history.');
+        console.error('Load session error:', error);
+    }
+}
     </script>
 </body>
 </html>
