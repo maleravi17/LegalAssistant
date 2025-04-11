@@ -2,6 +2,6 @@ fastapi
 uvicorn
 google-generativeai
 python-dotenv
-PyPDF2
+Pypdf 
 werkzeug
 python-multipart
