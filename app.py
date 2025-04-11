@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -7,6 +7,10 @@ import google.generativeai as genai
 import json
 import os
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
+import logging
+import PyPDF2
+from werkzeug.utils import secure_filename
 
 # Load environment variables
 load_dotenv()
@@ -16,44 +20,82 @@ API_KEYS = [
     os.getenv("GEMINI_API_KEY_3")
 ]
 
-current_key_index = 0
 SESSION_FOLDER = "sessions"
 os.makedirs(SESSION_FOLDER, exist_ok=True)
+UPLOADS_FOLDER = "uploads"
+os.makedirs(UPLOADS_FOLDER, exist_ok=True)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+class APIKeyManager:
+    def __init__(self, keys):
+        self.keys = keys
+        self.index = 0
+        self.last_rotation = datetime.now()
+        self.usage = {key: 0 for key in keys}
+        self.max_requests_per_key = 100
+        self.rotation_interval = timedelta(minutes=10)
+
+    def get_model(self):
+        if self.usage[self.keys[self.index]] >= self.max_requests_per_key or \
+           (datetime.now() - self.last_rotation) > self.rotation_interval:
+            self.rotate()
+        try:
+            genai.configure(api_key=self.keys[self.index])
+            self.usage[self.keys[self.index]] += 1
+            return genai.GenerativeModel('gemini-1.5-pro')
+        except Exception as e:
+            self.rotate()
+            if self.index >= len(self.keys):
+                raise HTTPException(status_code=500, detail="All API keys have been exhausted. Please add more keys.")
+            genai.configure(api_key=self.keys[self.index])
+            self.usage[self.keys[self.index]] += 1
+            return genai.GenerativeModel('gemini-1.5-pro')
+
+    def rotate(self):
+        self.usage[self.keys[self.index]] = 0
+        self.index = (self.index + 1) % len(self.keys)
+        self.last_rotation = datetime.now()
+
+key_manager = APIKeyManager(API_KEYS)
+model = key_manager.get_model()
 
 def load_session(session_id):
-    """Load session data from a file."""
     session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
     if os.path.exists(session_file):
         with open(session_file, "r") as f:
-            return json.load(f)
-    return []
+            data = json.load(f)
+            return {"history": data.get("history", []), "last_interaction": data.get("last_interaction", {})}
+    return {"history": [], "last_interaction": {}}
 
 def save_session(session_id, session_data):
-    """Save session data to a file."""
     session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
     with open(session_file, "w") as f:
-        json.dump(session_data, f)
+        json.dump({"history": session_data["history"], "last_interaction": session_data["last_interaction"]}, f)
 
-def initialize_gemini():
-    """Initialize Gemini with the current API key."""
-    global current_key_index
-    try:
-        genai.configure(api_key=API_KEYS[current_key_index])
-        return genai.GenerativeModel('gemini-1.5-pro')
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error initializing Gemini: {e}")
-
-def rotate_key():
-    """Rotate to the next API key."""
-    global current_key_index
-    if current_key_index < len(API_KEYS) - 1:
-        current_key_index += 1
-        return initialize_gemini()
-    else:
-        raise HTTPException(status_code=500, detail="All API keys have been used. Please add more keys.")
-
-# Initialize Gemini model
-model = initialize_gemini()
+def format_response(text):
+    paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
+    formatted = []
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
+            lines = para.split('\n')
+            formatted_para = []
+            for line in lines:
+                line = line.strip()
+                if line.startswith('* ') or line.startswith('- '):
+                    formatted_para.append(f"• {line[2:]}")
+                elif line.startswith('**') and line.endswith('**'):
+                    formatted_para.append(f"\n**{line[2:-2]}**\n")
+                else:
+                    formatted_para.append(line)
+            formatted.append('\n'.join(formatted_para))
+        else:
+            formatted.append(para)
+    return '\n\n'.join(formatted)
 
 # --- FastAPI App ---
 app = FastAPI()
@@ -82,47 +124,13 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
 
-def format_response(text):
-    """Format the response with paragraphs and bullet points."""
-    # Split into paragraphs by double newlines or single newlines if no doubles exist
-    paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
-    formatted = []
-    
-    for para in paragraphs:
-        para = para.strip()
-        if not para:
-            continue
-        # Detect if the paragraph starts with a bullet-like marker or heading
-        if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
-            # Handle nested bullet points
-            lines = para.split('\n')
-            formatted_para = []
-            for line in lines:
-                line = line.strip()
-                if line.startswith('* ') or line.startswith('- '):
-                    formatted_para.append(f"• {line[2:]}")  # Convert to bullet
-                elif line.startswith('**') and line.endswith('**'):
-                    formatted_para.append(f"\n**{line[2:-2]}**\n")  # Bold heading
-                else:
-                    formatted_para.append(line)
-            formatted.append('\n'.join(formatted_para))
-        else:
-            formatted.append(para)
-    
-    # Join paragraphs with double newlines for clear separation
-    return '\n\n'.join(formatted)
-
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_law_assistant(request: ChatRequest):
-    global model
-
-    # Load session data
+    logger.info(f"New chat request: session_id={request.session_id}, prompt={request.prompt}")
     session_data = load_session(request.session_id)
+    session_data["history"].append({"role": "user", "text": request.prompt})
+    session_data["last_interaction"] = {"prompt": request.prompt, "response": None}
 
-    # Add the user input to the session history
-    session_data.append({"role": "user", "text": request.prompt})
-
-    # Two-shot prompting examples
     examples = """
     Example 1:
     User: What is the difference between civil law and criminal law?
@@ -147,7 +155,6 @@ async def chat_with_law_assistant(request: ChatRequest):
     10. **Appeal**: If either party is dissatisfied, they can appeal the decision.
     """
 
-    # Create a context-specific prompt
     prompt = f"""
     You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
     You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
@@ -164,32 +171,144 @@ async def chat_with_law_assistant(request: ChatRequest):
     {examples}
 
     Conversation History:
-    {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
+    {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data['history']])}
 
     User: {request.prompt}
     Assistant:
     """
 
     try:
-        # Generate a response using the Gemini model
         response = model.generate_content(prompt)
         assistant_response = format_response(response.text)
-
-        # Add the assistant's response to the session history
-        session_data.append({"role": "assistant", "text": assistant_response})
-
-        # Save the updated session data
+        session_data["last_interaction"]["response"] = assistant_response
+        session_data["history"].append({"role": "assistant", "text": assistant_response})
         save_session(request.session_id, session_data)
-
+        logger.info(f"Chat response generated for session_id={request.session_id}")
         return ChatResponse(response=assistant_response)
     except Exception as e:
-        # Rotate to the next key if the current one fails
-        new_model = rotate_key()
+        logger.error(f"Error in chat: {str(e)}")
+        new_model = key_manager.get_model()  # Use key manager for rotation
         if new_model:
             model = new_model
             return await chat_with_law_assistant(request)
-        else:
-            raise HTTPException(status_code=500, detail="Sorry, I am unable to process your request at the moment.")
+        raise HTTPException(status_code=500, detail="Sorry, I am unable to process your request at the moment.")
+
+@app.post("/regenerate", response_model=ChatResponse)
+async def regenerate_response(request: ChatRequest):
+    logger.info(f"New regenerate request: session_id={request.session_id}, prompt={request.prompt}")
+    session_data = load_session(request.session_id)
+    if not session_data["history"] or not any(msg["role"] == "user" for msg in session_data["history"]):
+        raise HTTPException(status_code=400, detail="No previous prompt to regenerate")
+
+    last_prompt = next(msg["text"] for msg in reversed(session_data["history"]) if msg["role"] == "user")
+    if not last_prompt:
+        raise HTTPException(status_code=400, detail="No previous prompt found")
+
+    examples = """
+    Example 1:
+    User: What is the difference between civil law and criminal law?
+    Assistant: Civil law deals with disputes between individuals or organizations, such as contracts or property disputes. Criminal law, on the other hand, involves actions that are harmful to society and are prosecuted by the state, such as theft or assault.
+
+    Example 2:
+    User: Can a lawyer represent both parties in a case?
+    Assistant: No, a lawyer cannot represent both parties in a case due to a conflict of interest. It is unethical and prohibited by legal professional standards.
+    
+    Example 3:
+    User: Explain the process of filing a lawsuit in civil court.
+    Assistant: Sure! Here's a step-by-step explanation:
+    1. **Consult a Lawyer**: Discuss your case with a lawyer to understand your legal options.
+    2. **Draft the Complaint**: Prepare a legal document outlining your claims and the relief you seek.
+    3. **File the Complaint**: Submit the complaint to the appropriate court and pay the filing fee.
+    4. **Serve the Defendant**: Notify the defendant about the lawsuit by serving them the complaint.
+    5. **Await Response**: The defendant has a specified time to respond to the complaint.
+    6. **Discovery Phase**: Both parties exchange information and evidence related to the case.
+    7. **Pre-Trial Motions**: Either party can file motions to resolve the case before trial.
+    8. **Trial**: If the case proceeds to trial, both parties present their arguments and evidence.
+    9. **Judgment**: The judge or jury delivers a verdict.
+    10. **Appeal**: If either party is dissatisfied, they can appeal the decision.
+    """
+
+    prompt = f"""
+    You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
+    You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
+    Your task is to provide accurate, related IPC section numbers and Indian Acts, judgements, and professional answers to legal questions.
+    If the question is not related to law or related to all above options, politely decline to answer.
+
+    Guidelines:
+    - Provide answers in plain language that is easy to understand.
+    - If user asks question in local language, assist user in same language.
+    - Provide source websites or URLs to the user. 
+    - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
+    - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
+
+    {examples}
+
+    Conversation History:
+    {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data['history']])}
+
+    User: {last_prompt}
+    Assistant:
+    """
+
+    try:
+        response = model.generate_content(prompt)
+        assistant_response = format_response(response.text)
+        for msg in reversed(session_data["history"]):
+            if msg["role"] == "assistant":
+                msg["text"] = assistant_response
+                break
+        save_session(request.session_id, session_data)
+        logger.info(f"Regenerate response generated for session_id={request.session_id}")
+        return ChatResponse(response=assistant_response)
+    except Exception as e:
+        logger.error(f"Error in regenerate: {str(e)}")
+        new_model = key_manager.get_model()
+        if new_model:
+            model = new_model
+            return await regenerate_response(request)
+        raise HTTPException(status_code=500, detail="Sorry, I am unable to regenerate the response at the moment.")
+
+@app.post("/upload")
+async def upload_file(session_id: str, file: UploadFile = File(...)):
+    logger.info(f"New upload request: session_id={session_id}, file={file.filename}")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="Session ID is required")
+
+    file_path = os.path.join(UPLOADS_FOLDER, secure_filename(file.filename))
+    with open(file_path, "wb") as buffer:
+        buffer.write(await file.read())
+
+    if file.filename.lower().endswith('.pdf'):
+        try:
+            with open(file_path, "rb") as pdf_file:
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                text = ""
+                for page in pdf_reader.pages:
+                    text += page.extract_text() or ""
+                prompt = f"Analyze the following legal document: {text[:500]}... (truncated). Provide a summary and relevant Indian law insights."
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error processing PDF: {e}")
+    else:
+        prompt = f"File {file.filename} uploaded. It is not a PDF, so I cannot process it yet. Would you like more information?"
+
+    session_data = load_session(session_id)
+    session_data["history"].append({"role": "user", "text": f"Uploaded {file.filename}"})
+    save_session(session_id, session_data)
+
+    try:
+        response = model.generate_content(prompt)
+        assistant_response = format_response(response.text)
+        session_data["history"].append({"role": "assistant", "text": assistant_response})
+        save_session(session_id, session_data)
+        logger.info(f"Upload response generated for session_id={session_id}")
+        return {"message": f"File {file.filename} uploaded successfully", "response": assistant_response}
+    except Exception as e:
+        logger.error(f"Error in upload: {str(e)}")
+        new_model = key_manager.get_model()
+        if new_model:
+            model = new_model
+            return await upload_file(session_id, file)
+        raise HTTPException(status_code=500, detail="Sorry, I am unable to process the file at the moment.")
 
 if __name__ == "__main__":
     import uvicorn
