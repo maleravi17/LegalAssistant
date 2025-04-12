@@ -157,106 +157,110 @@ async def chat_with_law_assistant(request: ChatRequest):
     # Load session data
     session_data = load_session(request.session_id)
 
-    # Add the user input to the session history
-    session_data.append({"role": "user", "text": request.prompt})
-
-    # Two-shot prompting examples
-    examples = """
-    Example 1:
-    User: What is the difference between civil law and criminal law?
-    Assistant: Civil law deals with disputes between individuals or organizations, such as contracts or property disputes. Criminal law, on the other hand, involves actions that are harmful to society and are prosecuted by the state, such as theft or assault.
-
-    Example 2:
-    User: Can a lawyer represent both parties in a case?
-    Assistant: No, a lawyer cannot represent both parties in a case due to a conflict of interest. It is unethical and prohibited by legal professional standards.
-
-    Example 3:
-    User: Explain the process of filing a lawsuit in civil court.
-    Assistant: Sure! Here's a step-by-step explanation:
-    1. **Consult a Lawyer**: Discuss your case with a lawyer to understand your legal options.
-    2. **Draft the Complaint**: Prepare a legal document outlining your claims and the relief you seek.
-    3. **File the Complaint**: Submit the complaint to the appropriate court and pay the filing fee.
-    4. **Serve the Defendant**: Notify the defendant about the lawsuit by serving them the complaint.
-    5. **Await Response**: The defendant has a specified time to respond to the complaint.
-    6. **Discovery Phase**: Both parties exchange information and evidence related to the case.
-    7. **Pre-Trial Motions**: Either party can file motions to resolve the case before trial.
-    8. **Trial**: If the case proceeds to trial, both parties present their arguments and evidence.
-    9. **Judgment**: The judge or jury delivers a verdict.
-    10. **Appeal**: If either party is dissatisfied, they can appeal the decision.
-    """
-
-    # Check if the last assistant message asked for more information and user said "yes"
-    expanded_response = False
-    if session_data and len(session_data) >= 2:
-        last_assistant_msg = session_data[-2] if session_data[-2]["role"] == "assistant" else None
-        if last_assistant_msg and last_assistant_msg["text"].strip().endswith("Would you like more information?") and request.prompt.lower() == "yes":
-            expanded_response = True
-
-    # Create a context-specific prompt
-    if not session_data or (len(session_data) == 1 and not request.prompt.strip()):  # Initial welcome message
+    # Check for initial welcome message before appending user input
+    session_file = os.path.join(SESSION_FOLDER, f"{request.session_id}.json")
+    if not os.path.exists(session_file) and not request.prompt.strip():
         assistant_response = "Okay, I'm ready to assist you with your legal questions related to Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and other relevant topics. I can also help determine legal rights and official government procedures within my area of expertise. Please ask your question."
-    elif expanded_response:
-        last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else "general legal query"
-        prompt = f"""
-        You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
-        You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
-        The user previously asked: "{last_user_prompt}". They have responded "yes" to request more information.
-        Provide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs.
-
-        Guidelines:
-        - Provide answers in plain language that is easy to understand.
-        - Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
-        - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
-        - Do not end with "Would you like more information?" since the user has already indicated interest. Ensure this instruction is strictly followed.
-
-        {examples}
-
-        Conversation History:
-        {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
-
-        User: yes
-        Assistant:
-        """
-        def generate_content():
-            return model.generate_content(prompt)
-        response = retry_request(generate_content)
-        assistant_response = format_response(response.text)
     else:
-        prompt = f"""
-        You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
-        You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
-        Your task is to provide accurate, related IPC section numbers and Indian Acts, judgements, and professional answers to legal questions.
-        If the question is not related to law or related to all above options, politely decline to answer.
+        # Add the user input to the session history
+        session_data.append({"role": "user", "text": request.prompt})
 
-        Guidelines:
-        - Provide answers in plain language that is easy to understand.
-        - Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
-        - If user asks question in local language, assist user in same language.
-        - Provide source websites or URLs to the user.
-        - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
-        - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
-        - End your response with "Would you like more information?".
+        # Two-shot prompting examples
+        examples = """
+        Example 1:
+        User: What is the difference between civil law and criminal law?
+        Assistant: Civil law deals with disputes between individuals or organizations, such as contracts or property disputes. Criminal law, on the other hand, involves actions that are harmful to society and are prosecuted by the state, such as theft or assault.
 
-        {examples}
+        Example 2:
+        User: Can a lawyer represent both parties in a case?
+        Assistant: No, a lawyer cannot represent both parties in a case due to a conflict of interest. It is unethical and prohibited by legal professional standards.
 
-        Conversation History:
-        {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
-
-        User: {request.prompt}
-        Assistant:
+        Example 3:
+        User: Explain the process of filing a lawsuit in civil court.
+        Assistant: Sure! Here's a step-by-step explanation:
+        1. **Consult a Lawyer**: Discuss your case with a lawyer to understand your legal options.
+        2. **Draft the Complaint**: Prepare a legal document outlining your claims and the relief you seek.
+        3. **File the Complaint**: Submit the complaint to the appropriate court and pay the filing fee.
+        4. **Serve the Defendant**: Notify the defendant about the lawsuit by serving them the complaint.
+        5. **Await Response**: The defendant has a specified time to respond to the complaint.
+        6. **Discovery Phase**: Both parties exchange information and evidence related to the case.
+        7. **Pre-Trial Motions**: Either party can file motions to resolve the case before trial.
+        8. **Trial**: If the case proceeds to trial, both parties present their arguments and evidence.
+        9. **Judgment**: The judge or jury delivers a verdict.
+        10. **Appeal**: If either party is dissatisfied, they can appeal the decision.
         """
-        def generate_content():
-            return model.generate_content(prompt)
-        response = retry_request(generate_content)
-        assistant_response = format_response(response.text)
 
-    # Add the assistant's response to the session history
-    session_data.append({"role": "assistant", "text": assistant_response})
+        # Check if the last assistant message asked for more information and user said "yes"
+        expanded_response = False
+        if session_data and len(session_data) >= 2:
+            last_assistant_msg = session_data[-2] if session_data[-2]["role"] == "assistant" else None
+            if last_assistant_msg and last_assistant_msg["text"].strip().endswith("Would you like more information?") and request.prompt.lower() == "yes":
+                expanded_response = True
+
+        # Create a context-specific prompt
+        if expanded_response:
+            last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else "general legal query"
+            prompt = f"""
+            You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
+            You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
+            The user previously asked: "{last_user_prompt}". They have responded "yes" to request more information.
+            Provide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs.
+
+            Guidelines:
+            - Provide answers in plain language that is easy to understand.
+            - Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
+            - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
+            - Do not end with "Would you like more information?" since the user has already indicated interest. Ensure this instruction is strictly followed.
+
+            {examples}
+
+            Conversation History:
+            {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
+
+            User: yes
+            Assistant:
+            """
+            def generate_content():
+                return model.generate_content(prompt)
+            response = retry_request(generate_content)
+            assistant_response = format_response(response.text)
+        else:
+            prompt = f"""
+            You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
+            You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
+            Your task is to provide accurate, related IPC section numbers and Indian Acts, judgements, and professional answers to legal questions.
+            If the question is not related to law or related to all above options, politely decline to answer.
+
+            Guidelines:
+            - Provide answers in plain language that is easy to understand.
+            - Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
+            - If user asks question in local language, assist user in same language.
+            - Provide source websites or URLs to the user.
+            - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
+            - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
+            - End your response with "Would you like more information?".
+
+            {examples}
+
+            Conversation History:
+            {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
+
+            User: {request.prompt}
+            Assistant:
+            """
+            def generate_content():
+                return model.generate_content(prompt)
+            response = retry_request(generate_content)
+            assistant_response = format_response(response.text)
+
+    # Add the assistant's response to the session history (only if generated)
+    if 'assistant_response' in locals() and assistant_response:
+        session_data.append({"role": "assistant", "text": assistant_response})
 
     # Save the updated session data
     save_session(request.session_id, session_data)
 
-    return ChatResponse(response=assistant_response)
+    return ChatResponse(response=assistant_response if 'assistant_response' in locals() else "")
 
 if __name__ == "__main__":
     import uvicorn
