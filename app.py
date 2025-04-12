@@ -9,6 +9,7 @@ import os
 from dotenv import load_dotenv
 import time
 import logging
+import re
 
 # Load environment variables
 load_dotenv()
@@ -108,7 +109,7 @@ class ChatResponse(BaseModel):
     response: str
 
 def format_response(text):
-    """Format the response with paragraphs and bullet points."""
+    """Format the response with paragraphs and bullet points, removing duplicate endings."""
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
     for para in paragraphs:
@@ -129,7 +130,10 @@ def format_response(text):
             formatted.append('\n'.join(formatted_para))
         else:
             formatted.append(para)
-    return '\n\n'.join(formatted)
+    # Remove duplicate "Would you like more information?" endings
+    final_text = '\n\n'.join(formatted)
+    final_text = re.sub(r'Would you like more information\?\s*Would you like more information\?', 'Would you like more information?', final_text, flags=re.IGNORECASE)
+    return final_text
 
 def retry_request(func, max_retries=3, delay=5):
     """Retry the API call if a quota error occurs."""
@@ -190,16 +194,7 @@ async def chat_with_law_assistant(request: ChatRequest):
 
     # Create a context-specific prompt
     if not session_data or (len(session_data) == 1 and not request.prompt.strip()):  # Initial welcome message
-        prompt = """
-        You are a legal assistant specializing in Indian law, IPC sections, justice, advocates, lawyers, official passports, and judgment-related topics.
-        Provide a simple welcome message to encourage the user to ask a question.
-
-        Guidelines:
-        - Keep the response concise and inviting.
-        - Do not include a disclaimer or "Would you like more information?".
-
-        Assistant:
-        """
+        assistant_response = "Okay, I'm ready to assist you with your legal questions related to Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and other relevant topics. I can also help determine legal rights and official government procedures within my area of expertise. Please ask your question."
     elif expanded_response:
         last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else "general legal query"
         prompt = f"""
@@ -212,7 +207,7 @@ async def chat_with_law_assistant(request: ChatRequest):
         - Provide answers in plain language that is easy to understand.
         - Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
         - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
-        - Do not end with "Would you like more information?" since the user has already indicated interest.
+        - Do not end with "Would you like more information?" since the user has already indicated interest. Ensure this instruction is strictly followed.
 
         {examples}
 
@@ -222,6 +217,10 @@ async def chat_with_law_assistant(request: ChatRequest):
         User: yes
         Assistant:
         """
+        def generate_content():
+            return model.generate_content(prompt)
+        response = retry_request(generate_content)
+        assistant_response = format_response(response.text)
     else:
         prompt = f"""
         You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
@@ -246,31 +245,18 @@ async def chat_with_law_assistant(request: ChatRequest):
         User: {request.prompt}
         Assistant:
         """
-
-    def generate_content():
-        return model.generate_content(prompt)
-
-    try:
-        # Use retry mechanism for API call
+        def generate_content():
+            return model.generate_content(prompt)
         response = retry_request(generate_content)
         assistant_response = format_response(response.text)
 
-        # Add the assistant's response to the session history
-        session_data.append({"role": "assistant", "text": assistant_response})
+    # Add the assistant's response to the session history
+    session_data.append({"role": "assistant", "text": assistant_response})
 
-        # Save the updated session data
-        save_session(request.session_id, session_data)
+    # Save the updated session data
+    save_session(request.session_id, session_data)
 
-        return ChatResponse(response=assistant_response)
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        logger.error(f"Error in chat endpoint: {str(e)}")
-        new_model = rotate_key()
-        if new_model:
-            model = new_model
-            return await chat_with_law_assistant(request)
-        raise HTTPException(status_code=500, detail="Sorry, I am unable to process your request at the moment.")
+    return ChatResponse(response=assistant_response)
 
 if __name__ == "__main__":
     import uvicorn
