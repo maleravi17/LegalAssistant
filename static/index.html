@@ -751,9 +751,9 @@
             messageDiv.classList.add('message', role, isDarkTheme ? 'dark' : 'light');
             const contentDiv = document.createElement('div');
             contentDiv.classList.add('message-content');
-            // Only format URLs if no <a> tags are already present
+            // Check for pre-existing HTML links more robustly
             let formattedText = text;
-            if (!/<a\s+href=/.test(text)) {
+            if (!/<a\s+href=["']https?:\/\/[^\s<>]+["'][^>]*>/.test(text)) {
                 formattedText = text
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>')
