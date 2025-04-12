@@ -84,7 +84,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS", "HEAD"],  # Added HEAD method
+    allow_methods=["GET", "POST", "OPTIONS", "HEAD"],
     allow_headers=["*"],
 )
 
@@ -96,7 +96,7 @@ async def read_root():
     with open("static/index.html", "r") as f:
         return f.read()
 
-@app.head("/")  # Added HEAD method support
+@app.head("/")
 async def head_root():
     return HTMLResponse(status_code=200)
 
@@ -136,10 +136,10 @@ def retry_request(func, max_retries=3, delay=5):
     for attempt in range(max_retries):
         try:
             return func()
-        except genai.QuotaExceededError as e:  # Corrected namespace to genai
+        except genai.QuotaExceededError as e:
             logger.warning(f"Quota exceeded on attempt {attempt + 1}: {str(e)}")
             if attempt < max_retries - 1:
-                time.sleep(delay)  # Wait before retrying
+                time.sleep(delay)
                 continue
             raise HTTPException(status_code=429, detail="Quota exceeded. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
         except Exception as e:
@@ -181,28 +181,57 @@ async def chat_with_law_assistant(request: ChatRequest):
     10. **Appeal**: If either party is dissatisfied, they can appeal the decision.
     """
 
+    # Check if the last assistant message asked for more information and user said "yes"
+    expanded_response = False
+    if session_data and len(session_data) >= 2:
+        last_assistant_msg = session_data[-2] if session_data[-2]["role"] == "assistant" else None
+        if last_assistant_msg and last_assistant_msg["text"].strip().endswith("Would you like more information?") and request.prompt.lower() == "yes":
+            expanded_response = True
+
     # Create a context-specific prompt
-    prompt = f"""
-    You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
-    You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
-    Your task is to provide accurate, related IPC section numbers and Indian Acts, judgements, and professional answers to legal questions.
-    If the question is not related to law or related to all above options, politely decline to answer.
+    if expanded_response:
+        last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else "general legal query"
+        prompt = f"""
+        You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
+        You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
+        The user previously asked: "{last_user_prompt}". They have responded "yes" to request more information.
+        Provide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs.
 
-    Guidelines:
-    - Provide answers in plain language that is easy to understand.
-    - If user asks question in local language, assist user in same language.
-    - Provide source websites or URLs to the user. 
-    - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
-    - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
+        Guidelines:
+        - Provide answers in plain language that is easy to understand.
+        - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
 
-    {examples}
+        {examples}
 
-    Conversation History:
-    {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
+        Conversation History:
+        {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
 
-    User: {request.prompt}
-    Assistant:
-    """
+        User: yes
+        Assistant:
+        """
+    else:
+        prompt = f"""
+        You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
+        You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
+        Your task is to provide accurate, related IPC section numbers and Indian Acts, judgements, and professional answers to legal questions.
+        If the question is not related to law or related to all above options, politely decline to answer.
+
+        Guidelines:
+        - Provide answers in plain language that is easy to understand.
+        - If user asks question in local language, assist user in same language.
+        - Provide source websites or URLs to the user. 
+        - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
+        - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
+        - End your response with "Would you like more information?" unless the user has already said yes.
+
+        {examples}
+
+        Conversation History:
+        {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
+
+        User: {request.prompt}
+        Assistant:
+        """
 
     def generate_content():
         return model.generate_content(prompt)
