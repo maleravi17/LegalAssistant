@@ -577,7 +577,7 @@
                     if (response.ok) {
                         // Check if the response already ends with the question
                         let botResponse = data.response;
-                        if (!botResponse.trim().toLowerCase().endsWith('would you like more information?')) {
+                        if (!botResponse.trim().toLowerCase().endswith('would you like more information?')) {
                             botResponse += " Would you like more information?";
                         }
                         const message = addMessage('bot', botResponse, true);
@@ -659,7 +659,7 @@
                 if (response.ok) {
                     // Check if the response already ends with the question
                     let botResponse = data.response;
-                    if (!botResponse.trim().toLowerCase().endsWith('would you like more information?')) {
+                    if (!botResponse.trim().toLowerCase().endswith('would you like more information?')) {
                         botResponse += " Would you like more information?";
                     }
                     const lastUserMessage = chatDisplay.querySelector('.user:last-child');
@@ -751,27 +751,14 @@
             messageDiv.classList.add('message', role, isDarkTheme ? 'dark' : 'light');
             const contentDiv = document.createElement('div');
             contentDiv.classList.add('message-content');
-            // Check for pre-existing HTML links more robustly
-            let formattedText = text;
-            if (!/<a\s+href=["']https?:\/\/[^\s<>]+["'][^>]*>/.test(text)) {
-                formattedText = text
-                    .replace(/\n\n/g, '</p><p>')
-                    .replace(/\n/g, '<br>')
-                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/• (.+)/g, '<li>$1</li>')
-                    .replace(/(https?:\/\/[^\s]+)/g, '<a href="$1" target="_blank">$1</a>');
-                if (formattedText.includes('<li>')) {
-                    formattedText = formattedText.replace(/<p>(<li>.+<\/li>)<\/p>/g, '<ul>$1</ul>');
-                }
-            } else {
-                formattedText = text
-                    .replace(/\n\n/g, '</p><p>')
-                    .replace(/\n/g, '<br>')
-                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/• (.+)/g, '<li>$1</li>');
-                if (formattedText.includes('<li>')) {
-                    formattedText = formattedText.replace(/<p>(<li>.+<\/li>)<\/p>/g, '<ul>$1</ul>');
-                }
+            // Trust back-end HTML and only apply basic formatting
+            let formattedText = text
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>')
+                .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                .replace(/• (.+)/g, '<li>$1</li>');
+            if (formattedText.includes('<li>')) {
+                formattedText = formattedText.replace(/<p>(<li>.+<\/li>)<\/p>/g, '<ul>$1</ul>');
             }
             formattedText = `<p>${formattedText}</p>`;
             contentDiv.innerHTML = formattedText;
