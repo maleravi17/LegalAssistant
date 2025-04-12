@@ -74,6 +74,56 @@ def rotate_key():
     else:
         raise HTTPException(status_code=500, detail="All API keys have been used. Please add more keys.")
 
+def is_greeting(prompt: str) -> bool:
+    """Check if the input is a simple greeting."""
+    greetings = ["hello", "hi", "hey", "hola", "namaste"]
+    prompt_lower = prompt.lower().strip()
+    return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
+
+def format_response(text):
+    """Format the response with paragraphs and bullet points, removing duplicate endings."""
+    paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
+    formatted = []
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
+            lines = para.split('\n')
+            formatted_para = []
+            for line in lines:
+                line = line.strip()
+                if line.startswith('* ') or line.startswith('- '):
+                    formatted_para.append(f"• {line[2:]}")
+                elif line.startswith('**') and line.endswith('**'):
+                    formatted_para.append(f"\n**{line[2:-2]}**\n")
+                else:
+                    formatted_para.append(line)
+            formatted.append('\n'.join(formatted_para))
+        else:
+            formatted.append(para)
+    # Remove duplicate "Would you like more information?" endings
+    final_text = '\n\n'.join(formatted)
+    final_text = re.sub(r'Would you like more information\?\s*Would you like more information\?', 'Would you like more information?', final_text, flags=re.IGNORECASE)
+    # Improved hyperlink matching to exclude trailing punctuation
+    final_text = re.sub(r'(https?://[^\s<>]+(?:\s|$))', r'<a href="\1" target="_blank">\1</a>', final_text)
+    return final_text
+
+def retry_request(func, max_retries=3, delay=5):
+    """Retry the API call if a quota error occurs."""
+    for attempt in range(max_retries):
+        try:
+            return func()
+        except genai.QuotaExceededError as e:
+            logger.warning(f"Quota exceeded on attempt {attempt + 1}: {str(e)}")
+            if attempt < max_retries - 1:
+                time.sleep(delay)
+                continue
+            raise HTTPException(status_code=429, detail="Quota exceeded. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
+        except Exception as e:
+            logger.error(f"Unexpected error during API call: {str(e)}")
+            raise HTTPException(status_code=500, detail="Internal server error.")
+
 # Initialize Gemini model
 model = initialize_gemini()
 
@@ -107,48 +157,6 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
-
-def format_response(text):
-    """Format the response with paragraphs and bullet points, removing duplicate endings."""
-    paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
-    formatted = []
-    for para in paragraphs:
-        para = para.strip()
-        if not para:
-            continue
-        if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
-            lines = para.split('\n')
-            formatted_para = []
-            for line in lines:
-                line = line.strip()
-                if line.startswith('* ') or line.startswith('- '):
-                    formatted_para.append(f"• {line[2:]}")
-                elif line.startswith('**') and line.endswith('**'):
-                    formatted_para.append(f"\n**{line[2:-2]}**\n")
-                else:
-                    formatted_para.append(line)
-            formatted.append('\n'.join(formatted_para))
-        else:
-            formatted.append(para)
-    # Remove duplicate "Would you like more information?" endings
-    final_text = '\n\n'.join(formatted)
-    final_text = re.sub(r'Would you like more information\?\s*Would you like more information\?', 'Would you like more information?', final_text, flags=re.IGNORECASE)
-    return final_text
-
-def retry_request(func, max_retries=3, delay=5):
-    """Retry the API call if a quota error occurs."""
-    for attempt in range(max_retries):
-        try:
-            return func()
-        except genai.QuotaExceededError as e:
-            logger.warning(f"Quota exceeded on attempt {attempt + 1}: {str(e)}")
-            if attempt < max_retries - 1:
-                time.sleep(delay)
-                continue
-            raise HTTPException(status_code=429, detail="Quota exceeded. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
-        except Exception as e:
-            logger.error(f"Unexpected error during API call: {str(e)}")
-            raise HTTPException(status_code=500, detail="Internal server error.")
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_law_assistant(request: ChatRequest):
@@ -225,29 +233,45 @@ async def chat_with_law_assistant(request: ChatRequest):
             response = retry_request(generate_content)
             assistant_response = format_response(response.text)
         else:
-            prompt = f"""
-            You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
-            You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
-            Your task is to provide accurate, related IPC section numbers and Indian Acts, judgements, and professional answers to legal questions.
-            If the question is not related to law or related to all above options, politely decline to answer.
+            if is_greeting(request.prompt):
+                prompt = f"""
+                You are a legal assistant named Lexi specializing in Indian law, IPC sections, and related legal topics.
+                The user has greeted you with: "{request.prompt}". Provide a friendly response without legal details, disclaimer, or any ending question.
 
-            Guidelines:
-            - Provide answers in plain language that is easy to understand.
-            - Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
-            - If user asks question in local language, assist user in same language.
-            - Provide source websites or URLs to the user.
-            - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
-            - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
-            - End your response with "Would you like more information?".
+                Guidelines:
+                - Keep the response concise and friendly.
+                - Do not include the disclaimer or "Would you like more information?".
 
-            {examples}
+                Conversation History:
+                {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
 
-            Conversation History:
-            {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
+                User: {request.prompt}
+                Assistant:
+                """
+            else:
+                prompt = f"""
+                You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
+                You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work.
+                Your task is to provide accurate, related IPC section numbers and Indian Acts, judgements, and professional answers to legal questions.
+                If the question is not related to law or related to all above options, politely decline to answer.
 
-            User: {request.prompt}
-            Assistant:
-            """
+                Guidelines:
+                - Provide answers in plain language that is easy to understand.
+                - Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
+                - If user asks question in local language, assist user in same language.
+                - Provide source websites or URLs to the user.
+                - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
+                - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
+                - End your response with "Would you like more information?".
+
+                {examples}
+
+                Conversation History:
+                {" ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])}
+
+                User: {request.prompt}
+                Assistant:
+                """
             def generate_content():
                 return model.generate_content(prompt)
             response = retry_request(generate_content)
