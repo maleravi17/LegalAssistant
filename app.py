@@ -189,7 +189,18 @@ async def chat_with_law_assistant(request: ChatRequest):
             expanded_response = True
 
     # Create a context-specific prompt
-    if expanded_response:
+    if not session_data or (len(session_data) == 1 and not request.prompt.strip()):  # Initial welcome message
+        prompt = """
+        You are a legal assistant specializing in Indian law, IPC sections, justice, advocates, lawyers, official passports, and judgment-related topics.
+        Provide a simple welcome message to encourage the user to ask a question.
+
+        Guidelines:
+        - Keep the response concise and inviting.
+        - Do not include a disclaimer or "Would you like more information?".
+
+        Assistant:
+        """
+    elif expanded_response:
         last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else "general legal query"
         prompt = f"""
         You are a legal assistant specializing in Indian law, IPC section, justice, advocates, lawyers, official Passports related, and judgment-related topics.
@@ -201,6 +212,7 @@ async def chat_with_law_assistant(request: ChatRequest):
         - Provide answers in plain language that is easy to understand.
         - Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
         - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
+        - Do not end with "Would you like more information?" since the user has already indicated interest.
 
         {examples}
 
@@ -224,7 +236,7 @@ async def chat_with_law_assistant(request: ChatRequest):
         - Provide source websites or URLs to the user.
         - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
         - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
-        - End your response with "Would you like more information?" unless the user has already said yes.
+        - End your response with "Would you like more information?".
 
         {examples}
 
