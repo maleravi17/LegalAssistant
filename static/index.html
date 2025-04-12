@@ -140,7 +140,7 @@
             overflow-wrap: break-word;
         }
         .user {
-            padding: 2px 5px; /* Reduced top and bottom padding for blue question box */
+            padding: 2px 5px;
             text-align: left;
             white-space: pre-wrap;
         }
@@ -228,7 +228,7 @@
         }
         #prompt {
             flex-grow: 1;
-            padding: 10px 40px 10px 10px; /* Adjusted padding for internal buttons */
+            padding: 10px 40px 10px 10px;
             border-radius: 6px;
             font-size: 14px;
             resize: none;
@@ -289,7 +289,7 @@
             background-color: #2980b9;
         }
         .upload-btn {
-            right: 40px; /* Position attach button to the left of send */
+            right: 40px;
             padding: 6px;
             width: 28px;
             height: 28px;
@@ -498,26 +498,23 @@
         let sessionId = localStorage.getItem('sessionId') || 'pla_' + Math.random().toString(36).substr(2, 9);
         localStorage.setItem('sessionId', sessionId);
         let historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
-        let lastPrompt = null; // Store the last question for regeneration
+        let lastPrompt = null;
         let isDarkTheme = localStorage.getItem('theme') !== 'light';
 
         applyTheme(isDarkTheme);
-        loadSession(sessionId);
+        // Removed loadSession call on page load to preserve hardcoded message
 
-        // Dynamic textarea height while typing
         promptInput.addEventListener('input', () => {
             promptInput.style.height = 'auto';
             promptInput.style.height = `${promptInput.scrollHeight}px`;
         });
 
-        // Theme toggle switch
         themeToggle.addEventListener('change', () => {
             isDarkTheme = !themeToggle.checked;
             applyTheme(isDarkTheme);
             localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
         });
 
-        // File upload handling
         fileUpload.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
@@ -525,11 +522,10 @@
                 reader.onload = (event) => {
                     const fileContent = event.target.result;
                     addMessage('user', `Uploaded ${file.name}: [Content preview not shown, processed by bot]`);
-                    // Simulate bot response (replace with actual processing logic)
                     addMessage('bot', `Thank you for uploading ${file.name}. I’m analyzing it. Would you like more information?`, true);
                 };
-                reader.readAsDataURL(file); // For images, use readAsText for PDFs
-                fileUpload.value = ''; // Reset file input
+                reader.readAsDataURL(file);
+                fileUpload.value = '';
             }
         });
 
@@ -564,7 +560,7 @@
             if (!prompt && !fileUpload.files.length) return;
 
             if (prompt) {
-                lastPrompt = prompt; // Store the last question
+                lastPrompt = prompt;
                 addMessage('user', prompt);
                 promptInput.value = '';
                 promptInput.style.height = 'auto';
@@ -574,15 +570,16 @@
                     const response = await tryFetch('/chat', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            session_id: sessionId,
-                            prompt: prompt
-                        })
+                        body: JSON.stringify({ session_id: sessionId, prompt: prompt })
                     });
                     const data = await response.json();
                     chatDisplay.removeChild(typing);
                     if (response.ok) {
-                        const botResponse = `Thank you for your question. ${data.response} Would you like more information?`;
+                        // Check if the response already ends with the question
+                        let botResponse = data.response;
+                        if (!botResponse.trim().toLowerCase().endsWith('would you like more information?')) {
+                            botResponse += " Would you like more information?";
+                        }
                         const message = addMessage('bot', botResponse, true);
                         const regenerateBtn = document.createElement('button');
                         regenerateBtn.textContent = '🔄';
@@ -655,15 +652,16 @@
                 const response = await tryFetch('/regenerate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        session_id: sessionId,
-                        prompt: lastPrompt
-                    })
+                    body: JSON.stringify({ session_id: sessionId, prompt: lastPrompt })
                 });
                 const data = await response.json();
                 chatDisplay.removeChild(typing);
                 if (response.ok) {
-                    const botResponse = `Thank you for your question. ${data.response} Would you like more information?`;
+                    // Check if the response already ends with the question
+                    let botResponse = data.response;
+                    if (!botResponse.trim().toLowerCase().endsWith('would you like more information?')) {
+                        botResponse += " Would you like more information?";
+                    }
                     const lastUserMessage = chatDisplay.querySelector('.user:last-child');
                     const nextBotMessage = lastUserMessage ? lastUserMessage.nextElementSibling : null;
                     if (nextBotMessage && nextBotMessage.classList.contains('bot')) {
@@ -780,28 +778,6 @@
             return messageDiv;
         }
 
-        async function loadSession(id) {
-            try {
-                const response = await tryFetch('/chat', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        session_id: id,
-                        prompt: "Load this session"
-                    })
-                });
-                const data = await response.json();
-                chatDisplay.innerHTML = '';
-                const sessionData = JSON.parse(localStorage.getItem(id)) || [];
-                sessionData.forEach(msg => addMessage(msg.role, msg.text, msg.role === 'bot'));
-                if (data.response && !sessionData.length) {
-                    addMessage('bot', data.response, true);
-                }
-            } catch (error) {
-                addMessage('bot', 'Failed to load session history.');
-            }
-        }
-
         function updateHistory() {
             historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
             if (!historySessions.includes(sessionId)) {
@@ -816,7 +792,7 @@
                 li.addEventListener('click', () => {
                     sessionId = id;
                     localStorage.setItem('sessionId', id);
-                    loadSession(id);
+                    chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
                     sidebar.classList.remove('open');
                     sidebar.style.display = 'none';
                 });
