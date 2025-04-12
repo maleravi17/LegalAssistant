@@ -199,6 +199,7 @@ async def chat_with_law_assistant(request: ChatRequest):
 
         Guidelines:
         - Provide answers in plain language that is easy to understand.
+        - Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
         - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
 
         {examples}
@@ -218,8 +219,9 @@ async def chat_with_law_assistant(request: ChatRequest):
 
         Guidelines:
         - Provide answers in plain language that is easy to understand.
+        - Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
         - If user asks question in local language, assist user in same language.
-        - Provide source websites or URLs to the user. 
+        - Provide source websites or URLs to the user.
         - If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
         - Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
         - End your response with "Would you like more information?" unless the user has already said yes.
