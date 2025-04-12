@@ -30,36 +30,47 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def initialize_gemini():
-    global current_key_index, model
+    global current_key_index
     try:
+        if not API_KEYS or all(key is None for key in API_KEYS):
+            raise ValueError("No valid API keys found in environment variables.")
         genai.configure(api_key=API_KEYS[current_key_index])
         model = genai.GenerativeModel('gemini-1.5-pro')
+        logger.info(f"Initialized Gemini with key index {current_key_index}")
         return model
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error initializing Gemini: {e}")
+        logger.error(f"Failed to initialize Gemini: {str(e)}")
+        if current_key_index < len(API_KEYS) - 1:
+            current_key_index += 1
+            return initialize_gemini()
+        raise HTTPException(status_code=500, detail=f"Error initializing Gemini: {str(e)}")
 
-def rotate_key():
-    global current_key_index, model
-    if current_key_index < len(API_KEYS) - 1:
-        current_key_index += 1
-        return initialize_gemini()
-    else:
-        raise HTTPException(status_code=500, detail="All API keys have been used. Please add more keys.")
-
-# Initialize Gemini model
+# Initialize model at app startup
 model = initialize_gemini()
 
 def load_session(session_id):
+    logger.info(f"Attempting to load session: {session_id}")
     session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
     if os.path.exists(session_file):
-        with open(session_file, "r") as f:
-            return json.load(f)
+        try:
+            with open(session_file, "r") as f:
+                data = json.load(f)
+                logger.info(f"Successfully loaded session: {session_file}")
+                return data
+        except json.JSONDecodeError as e:
+            logger.error(f"Invalid JSON in session file {session_file}: {str(e)}")
+            return []
+    logger.warning(f"Session file not found: {session_file}")
     return []
 
 def save_session(session_id, session_data):
     session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
-    with open(session_file, "w") as f:
-        json.dump(session_data, f)
+    try:
+        with open(session_file, "w") as f:
+            json.dump(session_data, f)
+        logger.info(f"Successfully saved session: {session_file}")
+    except Exception as e:
+        logger.error(f"Failed to save session {session_file}: {str(e)}")
 
 def format_response(text):
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
@@ -168,13 +179,10 @@ async def chat_with_law_assistant(request: ChatRequest):
         assistant_response = format_response(response.text)
         session_data.append({"role": "assistant", "text": assistant_response})
         save_session(request.session_id, session_data)
+        logger.info(f"Chat response generated for session_id={request.session_id}")
         return ChatResponse(response=assistant_response)
     except Exception as e:
         logger.error(f"Error in chat: {str(e)}")
-        new_model = rotate_key()
-        if new_model:
-            model = new_model
-            return await chat_with_law_assistant(request)
         raise HTTPException(status_code=500, detail="Sorry, I am unable to process your request at the moment.")
 
 @app.post("/regenerate", response_model=ChatResponse)
@@ -246,10 +254,6 @@ async def regenerate_response(request: ChatRequest):
         return ChatResponse(response=assistant_response)
     except Exception as e:
         logger.error(f"Error in regenerate: {str(e)}")
-        new_model = rotate_key()
-        if new_model:
-            model = new_model
-            return await regenerate_response(request)
         raise HTTPException(status_code=500, detail="Sorry, I am unable to regenerate the response at the moment.")
 
 @app.post("/upload")
@@ -288,10 +292,6 @@ async def upload_file(session_id: str, file: UploadFile = File(...)):
         return {"message": f"File {file.filename} uploaded successfully", "response": assistant_response}
     except Exception as e:
         logger.error(f"Error in upload: {str(e)}")
-        new_model = rotate_key()
-        if new_model:
-            model = new_model
-            return await upload_file(session_id, file)
         raise HTTPException(status_code=500, detail="Sorry, I am unable to process the file at the moment.")
 
 if __name__ == "__main__":
