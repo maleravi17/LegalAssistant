@@ -84,7 +84,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "OPTIONS", "HEAD"],  # Added HEAD method
     allow_headers=["*"],
 )
 
@@ -95,6 +95,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 async def read_root():
     with open("static/index.html", "r") as f:
         return f.read()
+
+@app.head("/")  # Added HEAD method support
+async def head_root():
+    return HTMLResponse(status_code=200)
 
 class ChatRequest(BaseModel):
     session_id: str
@@ -132,7 +136,7 @@ def retry_request(func, max_retries=3, delay=5):
     for attempt in range(max_retries):
         try:
             return func()
-        except google.generativeai.QuotaExceededError as e:
+        except genai.QuotaExceededError as e:  # Corrected namespace to genai
             logger.warning(f"Quota exceeded on attempt {attempt + 1}: {str(e)}")
             if attempt < max_retries - 1:
                 time.sleep(delay)  # Wait before retrying
