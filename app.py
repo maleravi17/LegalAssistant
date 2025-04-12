@@ -81,7 +81,7 @@ def is_greeting(prompt: str) -> bool:
     return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
 
 def format_response(text):
-    """Format the response with paragraphs and bullet points, removing duplicate endings and fixing hyperlinks."""
+    """Format the response with paragraphs, bullet points, and proper hyperlinks."""
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
     for para in paragraphs:
@@ -105,8 +105,8 @@ def format_response(text):
     # Remove duplicate "Would you like more information?" endings
     final_text = '\n\n'.join(formatted)
     final_text = re.sub(r'Would you like more information\?\s*Would you like more information\?', 'Would you like more information?', final_text, flags=re.IGNORECASE)
-    # Improved hyperlink matching with proper HTML formatting
-    final_text = re.sub(r'(https?://[^\s<>]+)', r'<a href="\1" target="_blank">\1</a>', final_text)
+    # Enhanced hyperlink matching with full URLs
+    final_text = re.sub(r'(https?://[^\s<>]+|www\.[^\s<>]+)', r'<a href="\1" target="_blank">\1</a>', final_text)
     return final_text
 
 def retry_request(func, max_retries=3, delay=5):
