@@ -557,105 +557,58 @@
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const prompt = promptInput.value.trim();
-            if (!prompt && !fileUpload.files.length) return;
+            lastPrompt = prompt;
+            addMessage('user', prompt);
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+            const typing = addMessage('bot', 'Decoding legal mysteries...');
 
-            if (prompt) {
-                lastPrompt = prompt;
-                addMessage('user', prompt);
-                promptInput.value = '';
-                promptInput.style.height = 'auto';
-                const typing = addMessage('bot', 'Decoding legal mysteries...');
-
-                try {
-                    const response = await tryFetch('/chat', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ session_id: sessionId, prompt: prompt })
-                    });
-                    const data = await response.json();
-                    chatDisplay.removeChild(typing);
-                    if (response.ok) {
-                        // Check if the response already ends with the question
-                        let botResponse = data.response;
-                        if (!botResponse.trim().toLowerCase().endsWith('would you like more information?')) {
-                            botResponse += " Would you like more information?";
-                        }
-                        const message = addMessage('bot', botResponse, true);
-                        const regenerateBtn = document.createElement('button');
-                        regenerateBtn.textContent = '🔄';
-                        regenerateBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                        regenerateBtn.setAttribute('data-tooltip', 'Regenerate');
-                        regenerateBtn.onclick = () => regenerateResponse();
-                        message.querySelector('.actions').appendChild(regenerateBtn);
-                        const copyBtn = document.createElement('button');
-                        copyBtn.textContent = '📋';
-                        copyBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                        copyBtn.setAttribute('data-tooltip', 'Copy');
-                        copyBtn.onclick = () => {
-                            navigator.clipboard.writeText(data.response);
-                            alert('Copied to clipboard!');
-                        };
-                        const shareBtn = document.createElement('button');
-                        shareBtn.textContent = '↗';
-                        shareBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                        shareBtn.setAttribute('data-tooltip', 'Share');
-                        shareBtn.onclick = () => {
-                            navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href });
-                        };
-                        const loveBtn = document.createElement('button');
-                        loveBtn.textContent = '❤️';
-                        loveBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                        loveBtn.setAttribute('data-tooltip', 'Love this');
-                        loveBtn.onclick = () => {
-                            alert('Thanks for the love!');
-                        };
-                        const improveBtn = document.createElement('button');
-                        improveBtn.textContent = '👎';
-                        improveBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                        improveBtn.setAttribute('data-tooltip', 'Needs Improvement');
-                        improveBtn.onclick = () => {
-                            alert('Feedback noted!');
-                        };
-                        const downloadBtn = document.createElement('button');
-                        downloadBtn.textContent = '↓';
-                        downloadBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                        downloadBtn.setAttribute('data-tooltip', 'Download');
-                        downloadBtn.onclick = () => {
-                            const blob = new Blob([data.response], { type: 'text/plain' });
-                            const url = window.URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url;
-                            a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`;
-                            a.click();
-                            window.URL.revokeObjectURL(url);
-                        };
-                        message.querySelector('.actions').appendChild(copyBtn);
-                        message.querySelector('.actions').appendChild(shareBtn);
-                        message.querySelector('.actions').appendChild(loveBtn);
-                        message.querySelector('.actions').appendChild(improveBtn);
-                        message.querySelector('.actions').appendChild(downloadBtn);
-                        updateHistory();
-                    } else {
-                        addMessage('bot', 'Error: ' + data.detail);
-                    }
-                } catch (error) {
-                    chatDisplay.removeChild(typing);
-                    addMessage('bot', 'Sorry, I couldn’t connect to the server. Please try again.');
-                }
+            const formData = new FormData();
+            formData.append('session_id', sessionId);
+            formData.append('prompt', prompt);
+            if (fileUpload.files.length > 0) {
+                formData.append('file', fileUpload.files[0]);
+        fileUpload.value = '';
             }
-        });
+
+            try {
+                const response = await tryFetch('/chat', {
+                    method: 'POST',
+                    body: formData
+                }, 3, 5000);
+                const data = await response.json();
+                if (response.ok) {
+                    // Check if the response already ends with the question
+                    let botResponse = data.response;
+                    if (!botResponse.trim().toLowerCase().endsWith('would you like more information?')) {
+                        botResponse += " Would you like more information?";
+                    }
+                    const message = addMessage('bot', botResponse, true); message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { const blob = new Blob([data.response], { type: 'text/plain' }); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; a.click(); window.URL.revokeObjectURL(url); }, isDarkTheme));
+                    updateHistory();
+                } else {
+                    addMessage('bot', `Error: ${data.detail}`);
+                }
+            } catch (error) {
+                addMessage('bot', 'Sorry, I couldn’t connect to the server. Please try again.');
+            } finally {
+                chatDisplay.removeChild(typing);
+            }
+        });        
 
         async function regenerateResponse() {
-            if (!lastPrompt) return;
+          if (!lastPrompt) return;
             const typing = addMessage('bot', 'Regenerating response...');
             try {
                 const response = await tryFetch('/regenerate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: sessionId, prompt: lastPrompt })
-                });
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ session_id: sessionId, prompt: lastPrompt, regenerate: true })                }, 3, 5000);
                 const data = await response.json();
-                chatDisplay.removeChild(typing);
                 if (response.ok) {
                     // Check if the response already ends with the question
                     let botResponse = data.response;
@@ -668,69 +621,22 @@
                         chatDisplay.removeChild(nextBotMessage);
                     }
                     const message = addMessage('bot', botResponse, true);
-                    const regenerateBtn = document.createElement('button');
-                    regenerateBtn.textContent = '🔄';
-                    regenerateBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                    regenerateBtn.setAttribute('data-tooltip', 'Regenerate');
-                    regenerateBtn.onclick = () => regenerateResponse();
-                    message.querySelector('.actions').appendChild(regenerateBtn);
-                    const copyBtn = document.createElement('button');
-                    copyBtn.textContent = '📋';
-                    copyBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                    copyBtn.setAttribute('data-tooltip', 'Copy');
-                    copyBtn.onclick = () => {
-                        navigator.clipboard.writeText(data.response);
-                        alert('Copied to clipboard!');
-                    };
-                    const shareBtn = document.createElement('button');
-                    shareBtn.textContent = '↗';
-                    shareBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                    shareBtn.setAttribute('data-tooltip', 'Share');
-                    shareBtn.onclick = () => {
-                        navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href });
-                    };
-                    const loveBtn = document.createElement('button');
-                    loveBtn.textContent = '❤️';
-                    loveBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                    loveBtn.setAttribute('data-tooltip', 'Love this');
-                    loveBtn.onclick = () => {
-                        alert('Thanks for the love!');
-                    };
-                    const improveBtn = document.createElement('button');
-                    improveBtn.textContent = '👎';
-                    improveBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                    improveBtn.setAttribute('data-tooltip', 'Needs Improvement');
-                    improveBtn.onclick = () => {
-                        alert('Feedback noted!');
-                    };
-                    const downloadBtn = document.createElement('button');
-                    downloadBtn.textContent = '↓';
-                    downloadBtn.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-                    downloadBtn.setAttribute('data-tooltip', 'Download');
-                    downloadBtn.onclick = () => {
-                        const blob = new Blob([data.response], { type: 'text/plain' });
-                        const url = window.URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`;
-                        a.click();
-                        window.URL.revokeObjectURL(url);
-                    };
-                    message.querySelector('.actions').appendChild(copyBtn);
-                    message.querySelector('.actions').appendChild(shareBtn);
-                    message.querySelector('.actions').appendChild(loveBtn);
-                    message.querySelector('.actions').appendChild(improveBtn);
-                    message.querySelector('.actions').appendChild(downloadBtn);
+                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { const blob = new Blob([data.response], { type: 'text/plain' }); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; a.click(); window.URL.revokeObjectURL(url); }, isDarkTheme));
                 } else {
-                    addMessage('bot', 'Error: ' + data.detail);
+                    addMessage('bot', `Error: ${data.detail}`);
                 }
             } catch (error) {
-                chatDisplay.removeChild(typing);
                 addMessage('bot', 'Sorry, I couldn’t regenerate the response. Please try again.');
+            } finally {
+                chatDisplay.removeChild(typing);
             }
         }
 
-        async function tryFetch(url, options, retries = 3, delay = 5000) {
+        async function tryFetch(url, options, retries, delay) {
             for (let i = 0; i < retries; i++) {
                 try {
                     const response = await fetch(url, options);
@@ -746,6 +652,17 @@
             }
         }
 
+        function createActionButton(text, tooltip, callback, isDarkTheme) {
+            const button = document.createElement('button');
+            button.textContent = text;
+            button.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+            button.setAttribute('data-tooltip', tooltip);
+            button.onclick = callback;
+            return button;
+        }
+
+
+
         function addMessage(role, text, isBotWithActions = false) {
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message', role, isDarkTheme ? 'dark' : 'light');
@@ -753,7 +670,7 @@
             contentDiv.classList.add('message-content');
             // Trust back-end HTML and only apply basic formatting if no <a> tags are present
             let formattedText = text;
-            if (!/<a\s+href=["'](?:https?:\/\/)?[^\s<>]+["'][^>]*>.*<\/a>/.test(text)) {
+            if (!/<a\s+href=["'](https?:\/\/)[^\s<>]+["'][^>]*>.*<\/a>/.test(text)) {
                 formattedText = text
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>')
@@ -788,6 +705,11 @@
                 localStorage.setItem('historySessions', JSON.stringify(historySessions));
             }
             historyList.innerHTML = '';
+            if (historySessions.length === 0) {
+                const li = document.createElement('li');
+                li.textContent = "No history available";
+                historyList.appendChild(li);
+            }
             historySessions.forEach(id => {
                 const li = document.createElement('li');
                 li.classList.add(isDarkTheme ? 'dark' : 'light');
