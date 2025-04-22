@@ -568,7 +568,7 @@
             formData.append('prompt', prompt);
             if (fileUpload.files.length > 0) {
                 formData.append('file', fileUpload.files[0]);
-        fileUpload.value = '';
+                fileUpload.value = '';
             }
 
             try {
@@ -578,17 +578,21 @@
                 }, 3, 5000);
                 const data = await response.json();
                 if (response.ok) {
-                    // Check if the response already ends with the question
-                    let botResponse = data.response;
-                    if (!botResponse.trim().toLowerCase().endsWith('would you like more information?')) {
-                        botResponse += " Would you like more information?";
-                    }
-                    const message = addMessage('bot', botResponse, true); message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
+                    const message = addMessage('bot', data.response, true);
+                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
                     message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
                     message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
                     message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
                     message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { const blob = new Blob([data.response], { type: 'text/plain' }); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; a.click(); window.URL.revokeObjectURL(url); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { 
+                        const blob = new Blob([data.response], { type: 'text/plain' }); 
+                        const url = window.URL.createObjectURL(blob); 
+                        const a = document.createElement('a'); 
+                        a.href = url; 
+                        a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; 
+                        a.click(); 
+                        window.URL.revokeObjectURL(url); 
+                    }, isDarkTheme));
                     updateHistory();
                 } else {
                     addMessage('bot', `Error: ${data.detail}`);
@@ -598,34 +602,43 @@
             } finally {
                 chatDisplay.removeChild(typing);
             }
-        });        
+        });
 
         async function regenerateResponse() {
-          if (!lastPrompt) return;
+            if (!lastPrompt) return;
             const typing = addMessage('bot', 'Regenerating response...');
             try {
+                const formData = new FormData();
+                formData.append('session_id', sessionId);
+                formData.append('prompt', lastPrompt);
+                formData.append('regenerate', 'true');
+
                 const response = await tryFetch('/regenerate', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ session_id: sessionId, prompt: lastPrompt, regenerate: true })                }, 3, 5000);
+                    method: 'POST',
+                    body: formData
+                }, 3, 5000);
                 const data = await response.json();
                 if (response.ok) {
-                    // Check if the response already ends with the question
-                    let botResponse = data.response;
-                    if (!botResponse.trim().toLowerCase().endsWith('would you like more information?')) {
-                        botResponse += " Would you like more information?";
-                    }
                     const lastUserMessage = chatDisplay.querySelector('.user:last-child');
                     const nextBotMessage = lastUserMessage ? lastUserMessage.nextElementSibling : null;
                     if (nextBotMessage && nextBotMessage.classList.contains('bot')) {
                         chatDisplay.removeChild(nextBotMessage);
                     }
-                    const message = addMessage('bot', botResponse, true);
-                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
+                    const message = addMessage('bot', data.response, true);
+                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
                     message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
                     message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
                     message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { const blob = new Blob([data.response], { type: 'text/plain' }); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; a.click(); window.URL.revokeObjectURL(url); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { 
+                        const blob = new Blob([data.response], { type: 'text/plain' }); 
+                        const url = window.URL.createObjectURL(blob); 
+                        const a = document.createElement('a'); 
+                        a.href = url; 
+                        a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; 
+                        a.click(); 
+                        window.URL.revokeObjectURL(url); 
+                    }, isDarkTheme));
                 } else {
                     addMessage('bot', `Error: ${data.detail}`);
                 }
@@ -661,14 +674,11 @@
             return button;
         }
 
-
-
         function addMessage(role, text, isBotWithActions = false) {
             const messageDiv = document.createElement('div');
             messageDiv.classList.add('message', role, isDarkTheme ? 'dark' : 'light');
             const contentDiv = document.createElement('div');
             contentDiv.classList.add('message-content');
-            // Trust back-end HTML and only apply basic formatting if no <a> tags are present
             let formattedText = text;
             if (!/<a\s+href=["'](https?:\/\/)[^\s<>]+["'][^>]*>.*<\/a>/.test(text)) {
                 formattedText = text
