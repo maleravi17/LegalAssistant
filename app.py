@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -28,7 +28,7 @@ SESSION_FOLDER = "sessions"
 os.makedirs(SESSION_FOLDER, exist_ok=True)
 
 # Set up logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 def load_session(session_id):
@@ -187,50 +187,53 @@ async def read_root():
 async def head_root():
     return HTMLResponse(status_code=200)
 
-class ChatRequest(BaseModel):
-    session_id: str
-    prompt: str
-    regenerate: bool = False
-
 class ChatResponse(BaseModel):
     response: str
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(None)):
+async def chat_with_law_assistant(
+    session_id: str = Form(...),
+    prompt: str = Form(...),
+    regenerate: bool = Form(False),
+    file: UploadFile = File(None)
+):
     global model
+    logger.debug(f"Received /chat request: session_id={session_id}, prompt={prompt}, regenerate={regenerate}, file={file.filename if file else None}")
     try:
         file_content = ""
         if file:
             file_content = await process_uploaded_file(file)
 
         # Load session data
-        session_data = load_session(request.session_id)
+        session_data = load_session(session_id)
 
         # Check for initial welcome message
-        session_file = os.path.join(SESSION_FOLDER, f"{request.session_id}.json")
-        if not os.path.exists(session_file) and not request.prompt.strip() and not request.regenerate:
+        session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
+        if not os.path.exists(session_file) and not prompt.strip() and not regenerate:
             assistant_response = "Okay, I'm ready to assist you with your legal questions related to Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and other relevant topics. I can also help determine legal rights and official government procedures within my area of expertise. Please ask your question."
+            logger.debug("Returning initial welcome message")
             return ChatResponse(response=assistant_response)
 
         # Handle greetings
-        if is_greeting(request.prompt):
+        if is_greeting(prompt):
             assistant_response = "Hello! I'm Lexi, your legal assistant for Indian law. How can I help you today?"
-            session_data.append({"role": "user", "text": request.prompt})
+            session_data.append({"role": "user", "text": prompt})
             session_data.append({"role": "assistant", "text": assistant_response})
-            save_session(request.session_id, session_data)
+            save_session(session_id, session_data)
+            logger.debug("Handled greeting prompt")
             return ChatResponse(response=assistant_response)
 
         # Append user input to session history
-        session_data.append({"role": "user", "text": request.prompt})
+        session_data.append({"role": "user", "text": prompt})
 
         # Check for expanded response
         expanded_response = False
-        last_user_prompt = request.prompt
+        last_user_prompt = prompt
         if session_data and len(session_data) >= 2:
             last_assistant_msg = session_data[-2] if session_data[-2]["role"] == "assistant" else None
-            if last_assistant_msg and last_assistant_msg["text"].strip().endswith("Would you like more information?") and request.prompt.lower() == "yes":
+            if last_assistant_msg and last_assistant_msg["text"].strip().endswith("Would you like more information?") and prompt.lower() == "yes":
                 expanded_response = True
-                last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else request.prompt
+                last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else prompt
 
         # Load base prompt
         with open("prompts/base_prompt.txt", "r") as f:
@@ -241,23 +244,26 @@ async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(
 
         # Construct prompt
         if expanded_response:
-            prompt = f"{base_prompt}\n\nThe user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs.\n\nConversation History:\n{history}\n\nUser: yes\nAssistant:"
+            prompt_text = f"{base_prompt}\n\nThe user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs.\n\nConversation History:\n{history}\n\nUser: yes\nAssistant:"
         else:
-            prompt = f"{base_prompt}\n\nConversation History:\n{history}\n\nUser: {request.prompt}\nAssistant:"
+            prompt_text = f"{base_prompt}\n\nConversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
 
         if file_content:
-            prompt = f"File content:\n{file_content}\n\n{prompt}"
+            prompt_text = f"File content:\n{file_content}\n\n{prompt_text}"
 
         # Generate response
         async def generate_content():
-            response = model.generate_content(prompt)
+            logger.debug(f"Generating content for prompt: {prompt_text[:50]}...")
+            response = model.generate_content(prompt_text)
+            logger.debug("Content generated successfully")
             return response
 
         try:
             response = await retry_request(generate_content)
             assistant_response = format_response(response.text)
             session_data.append({"role": "assistant", "text": assistant_response})
-            save_session(request.session_id, session_data)
+            save_session(session_id, session_data)
+            logger.debug("Response generated and session saved")
             return ChatResponse(response=assistant_response)
         except genai.QuotaExceededError:
             try:
@@ -265,9 +271,11 @@ async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(
                 response = await retry_request(generate_content)
                 assistant_response = format_response(response.text)
                 session_data.append({"role": "assistant", "text": assistant_response})
-                save_session(request.session_id, session_data)
+                save_session(session_id, session_data)
+                logger.debug("Response generated after key rotation")
                 return ChatResponse(response=assistant_response)
             except genai.QuotaExceededError:
+                logger.error("Quota exceeded for all API keys")
                 raise HTTPException(status_code=429, detail="Quota exceeded for all API keys. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
         except Exception as e:
             logger.error(f"Error generating content: {str(e)}")
@@ -278,12 +286,23 @@ async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
 @app.post("/regenerate", response_model=ChatResponse)
-async def regenerate_response(request: ChatRequest):
+async def regenerate_response(
+    session_id: str = Form(...),
+    prompt: str = Form(...),
+    regenerate: bool = Form(True)
+):
     """Regenerate a response for the given prompt."""
-    if not request.prompt:
+    logger.debug(f"Received /regenerate request: session_id={session_id}, prompt={prompt}, regenerate={regenerate}")
+    if not prompt:
+        logger.error("Prompt is required for regeneration")
         raise HTTPException(status_code=400, detail="Prompt is required for regeneration.")
     # Call the chat endpoint with regenerate=True
-    return await chat_with_law_assistant(ChatRequest(session_id=request.session_id, prompt=request.prompt, regenerate=True))
+    return await chat_with_law_assistant(
+        session_id=session_id,
+        prompt=prompt,
+        regenerate=regenerate,
+        file=None
+    )
 
 if __name__ == "__main__":
     import uvicorn
