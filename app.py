@@ -135,16 +135,26 @@ def is_greeting(prompt: str) -> bool:
 
 def should_offer_more_info(response: str, prompt: str) -> bool:
     """Determine if 'Would you like more information?' should be added."""
-    # Don't add for greetings
+    # Skip for greetings
     if is_greeting(prompt):
+        logger.debug("Skipping more info prompt for greeting")
         return False
-    # Add if response is short (less than 100 words)
+    # Skip for file upload responses
+    if "Uploaded image" in response or "Error processing PDF file" in response or "No text could be extracted" in response:
+        logger.debug("Skipping more info prompt for file upload response")
+        return False
+    # Add if response is short (less than 80 words)
     word_count = len(response.split())
-    if word_count < 100:
+    if word_count < 80:
+        logger.debug(f"Adding more info prompt due to short response: {word_count} words")
         return True
-    # Add if response lacks specific details (e.g., no mention of IPC sections or case law)
-    has_details = any(keyword in response.lower() for keyword in ["section ", "act ", "case ", "judgment ", "court "])
-    return not has_details
+    # Add if response lacks specific legal details (e.g., no IPC sections, acts, or case law)
+    has_details = any(keyword in response.lower() for keyword in ["section ", "act ", "case ", "judgment ", "court ", "url", "http"])
+    if not has_details:
+        logger.debug("Adding more info prompt due to lack of specific legal details")
+        return True
+    logger.debug("Skipping more info prompt due to sufficient detail")
+    return False
 
 def format_response(text, prompt):
     """Format the response with paragraphs, bullet points, and proper hyperlinks."""
