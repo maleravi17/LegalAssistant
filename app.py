@@ -1,19 +1,21 @@
+import os
 from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
-from fastapi import HTTPException
+import google.generativeai as genai
+from dotenv import load_dotenv
 import PyPDF2
 import json
-import os
 import asyncio
 import re
 import time
-import shutil, logging
+import shutil
+import logging
 import tempfile
 
-
+# Load environment variables
 load_dotenv()
 API_KEYS = [
     os.getenv("GEMINI_API_KEY_1"),
@@ -24,7 +26,6 @@ API_KEYS = [
 current_key_index = 0
 SESSION_FOLDER = "sessions"
 os.makedirs(SESSION_FOLDER, exist_ok=True)
-
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -65,17 +66,66 @@ def initialize_gemini():
     """Initialize the Gemini model and return the model instance."""
     global model
     try:
+        genai.configure(api_key=API_KEYS[current_key_index])
         best_model = 'models/gemini-2.0-flash-001'
-        model = genai.GenerativeModel(best_model)  
+        model = genai.GenerativeModel(best_model)
+        logger.info(f"Initialized Gemini model with API key index {current_key_index}")
+        return model
     except Exception as e:
+        logger.error(f"Failed to initialize Gemini model: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to initialize Gemini model: {str(e)}")
+
 def rotate_key():
     """Rotate to the next API key."""
     global current_key_index
     if current_key_index < len(API_KEYS) - 1:
         current_key_index += 1
+        logger.info(f"Rotated to API key index {current_key_index}")
         return initialize_gemini()
     else:
+        logger.error("All API keys have been used")
         raise HTTPException(status_code=500, detail="All API keys have been used. Please add more keys.")
+
+async def retry_request(func, retries=3, delay=5):
+    """Retry a function with exponential backoff."""
+    for attempt in range(retries):
+        try:
+            return await func()
+        except Exception as e:
+            if attempt == retries - 1:
+                logger.error(f"Failed after {retries} attempts: {str(e)}")
+                raise
+            logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {delay} seconds...")
+            await asyncio.sleep(delay)
+            delay *= 2  # Exponential backoff
+
+async def process_uploaded_file(file: UploadFile):
+    """Process uploaded PDF or image files."""
+    if file.content_type == 'application/pdf':
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+                temp_file.write(await file.read())
+                temp_file_path = temp_file.name
+
+            with open(temp_file_path, 'rb') as pdf_file:
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                text = ""
+                for page in pdf_reader.pages:
+                    extracted = page.extract_text()
+                    if extracted:
+                        text += extracted + "\n"
+            os.unlink(temp_file_path)
+            logger.info(f"Successfully processed PDF file: {file.filename}")
+            return text.strip() if text.strip() else "No text could be extracted from the PDF."
+        except Exception as e:
+            logger.error(f"Error processing PDF file {file.filename}: {str(e)}")
+            return f"Error processing PDF file: {str(e)}"
+    elif file.content_type.startswith('image/'):
+        logger.info(f"Image file uploaded: {file.filename}. Image processing not implemented.")
+        return f"Uploaded image: {file.filename}. Image processing is not currently supported."
+    else:
+        logger.error(f"Unsupported file type: {file.content_type}")
+        return f"Unsupported file type: {file.content_type}"
 
 def is_greeting(prompt: str) -> bool:
     """Check if the input is a simple greeting."""
@@ -105,17 +155,15 @@ def format_response(text):
             formatted.append('\n'.join(formatted_para))
         else:
             formatted.append(para)
-    # Remove duplicate "Would you like more information?" endings
     final_text = '\n\n'.join(formatted)
     final_text = re.sub(r'Would you like more information\?\s*Would you like more information\?', 'Would you like more information?', final_text, flags=re.IGNORECASE)
-    # Enhanced hyperlink matching with full URLs
     final_text = re.sub(r'(https?://[^\s<>]+|www\.[^\s<>]+)', r'<a href="\1" target="_blank">\1</a>', final_text)
     return final_text
 
 # Initialize Gemini model
 model = initialize_gemini()
 
-# --- FastAPI App ---
+# FastAPI App
 app = FastAPI()
 
 # CORS Middleware
@@ -147,108 +195,92 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
 
-def get_prompt(prompt_type, user_input, session_data, ask_for_more_info=True):
-    """Get the prompt from file, and add the specific content depending on the prompt_type"""
-    with open("prompts/base_prompt.txt", "r") as f:
-        prompt = f.read()
-    if prompt_type == 'greeting':
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-                temp_file.write(await file.read())
-                temp_file_path = temp_file.name
-
-            with open(temp_file_path, 'rb') as pdf_file:
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
-                text = ""
-                for page in pdf_reader.pages:
-                    text += page.extract_text()
-            os.unlink(temp_file_path)
-        except Exception as e:
-            logger.error(f"Error processing PDF file: {str(e)}. File name: {file.filename}")
-            return "Error processing PDF file."
-    elif file.content_type.startswith('image/'):
-        logger.info(f"File is an image. File name: {file.filename}")
-        return "file is an image"
-    else:
-    return text
-
-@app.post("/chat", response_model=ChatResponse)  # Add response_model here
+@app.post("/chat", response_model=ChatResponse)
 async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(None)):
-    # If it's a greeting, customize the prompt for a friendly response.
-    # Add the base guidelines to the prompt to maintain consistency.
     global model
     try:
         file_content = ""
         if file:
-            try:
-                file_content = await process_uploaded_file(file)
-            except Exception as e:
-                logger.error(f"Error processing uploaded file: {e}")
-                file_content = ""  # Ensure file_content is empty in case of an error
+            file_content = await process_uploaded_file(file)
 
         # Load session data
         session_data = load_session(request.session_id)
 
-        # Check for initial welcome message before appending user input
-    session_file = os.path.join(SESSION_FOLDER, f"{request.session_id}.json")
-    if not os.path.exists(session_file) and not request.prompt.strip() and not request.regenerate:
-      assistant_response = "Okay, I'm ready to assist you with your legal questions related to Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and other relevant topics. I can also help determine legal rights and official government procedures within my area of expertise. Please ask your question."
-    else:
-        # Conditionally add the user input to the session history
+        # Check for initial welcome message
+        session_file = os.path.join(SESSION_FOLDER, f"{request.session_id}.json")
+        if not os.path.exists(session_file) and not request.prompt.strip() and not request.regenerate:
+            assistant_response = "Okay, I'm ready to assist you with your legal questions related to Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and other relevant topics. I can also help determine legal rights and official government procedures within my area of expertise. Please ask your question."
+            return ChatResponse(response=assistant_response)
+
+        # Handle greetings
+        if is_greeting(request.prompt):
+            assistant_response = "Hello! I'm Lexi, your legal assistant for Indian law. How can I help you today?"
+            session_data.append({"role": "user", "text": request.prompt})
+            session_data.append({"role": "assistant", "text": assistant_response})
+            save_session(request.session_id, session_data)
+            return ChatResponse(response=assistant_response)
+
+        # Append user input to session history
         session_data.append({"role": "user", "text": request.prompt})
-        # Check if the last assistant message asked for more information and user said "yes"
+
+        # Check for expanded response
         expanded_response = False
+        last_user_prompt = request.prompt
         if session_data and len(session_data) >= 2:
             last_assistant_msg = session_data[-2] if session_data[-2]["role"] == "assistant" else None
             if last_assistant_msg and last_assistant_msg["text"].strip().endswith("Would you like more information?") and request.prompt.lower() == "yes":
                 expanded_response = True
+                last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else request.prompt
 
-        base_prompt = """You are a legal assistant named Lexi specializing in Indian law, IPC sections, and related legal topics. You are an attorney and/or criminal lawyer to determine legal rights with full knowledge of IPC section, Indian Acts and government-related official work. Your task is to provide accurate, related IPC section numbers and Indian Acts, judgements, and professional answers to legal questions. If the question is not related to law or related to all above options, politely decline to answer.
+        # Load base prompt
+        with open("prompts/base_prompt.txt", "r") as f:
+            base_prompt = f.read()
 
-Guidelines:
-- Provide answers in plain language that is easy to understand.
-- Include the disclaimer: "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
-- If user asks question in local language, assist user in same language.
-- Provide source websites or URLs to the user.
-- If required for specific legal precedents or case law, provide relevant citations (e.g., case names, court, and year) along with a brief summary of the judgment.
-- Format your response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points.
-- You must decide if more information is needed from the user, if so ask politely. 
-"""
-        # Create a context-specific prompt for expanded responses
+        # Construct prompt
         if expanded_response:
             prompt = f'{base_prompt}\n\nThe user previously asked: "{last_user_prompt}". They have responded "yes" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs.\n\nConversation History:\n{" ".join([f"{msg["role"]}: {msg["text"]}" for msg in session_data])}\n\nUser: yes\nAssistant:'
-        else:    
+        else:
             prompt = f'{base_prompt}\n\nConversation History:\n{" ".join([f"{msg["role"]}: {msg["text"]}" for msg in session_data])}\n\nUser: {request.prompt}\nAssistant:'
 
         if file_content:
-          prompt = f"File content:\n{file_content}\n\n{prompt}"
+            prompt = f"File content:\n{file_content}\n\n{prompt}"
+
+        # Generate response
+        async def generate_content():
+            response = model.generate_content(prompt)
+            return response
 
         try:
-            def generate_content():
-                return model.generate_content(prompt)
-                assistant_response = await retry_request(generate_content)
-                assistant_response = format_response(assistant_response.text)
+            response = await retry_request(generate_content)
+            assistant_response = format_response(response.text)
+            session_data.append({"role": "assistant", "text": assistant_response})
+            save_session(request.session_id, session_data)
+            return ChatResponse(response=assistant_response)
+        except genai.QuotaExceededError:
+            try:
+                model = rotate_key()
+                response = await retry_request(generate_content)
+                assistant_response = format_response(response.text)
                 session_data.append({"role": "assistant", "text": assistant_response})
                 save_session(request.session_id, session_data)
                 return ChatResponse(response=assistant_response)
-        except genai.QuotaExceededError as e:
-            raise HTTPException(status_code=429, detail="Quota exceeded. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
+            except genai.QuotaExceededError:
+                raise HTTPException(status_code=429, detail="Quota exceeded for all API keys. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
         except Exception as e:
+            logger.error(f"Error generating content: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error generating content: {str(e)}")
-    except genai.QuotaExceededError as e:
-        raise HTTPException(status_code=429, detail="Quota exceeded. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generating content: {str(e)}")
+        logger.error(f"Unexpected error in /chat: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
-
-
-
-
-
-
-
-
-
+@app.post("/regenerate", response_model=ChatResponse)
+async def regenerate_response(request: ChatRequest):
+    """Regenerate a response for the given prompt."""
+    if not request.prompt:
+        raise HTTPException(status_code=400, detail="Prompt is required for regeneration.")
+    # Call the chat endpoint with regenerate=True
+    return await chat_with_law_assistant(ChatRequest(session_id=request.session_id, prompt=request.prompt, regenerate=True))
 
 if __name__ == "__main__":
     import uvicorn
