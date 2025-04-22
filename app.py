@@ -236,11 +236,14 @@ async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(
         with open("prompts/base_prompt.txt", "r") as f:
             base_prompt = f.read()
 
+        # Construct conversation history
+        history = " ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])
+
         # Construct prompt
         if expanded_response:
-            prompt = f'{base_prompt}\n\nThe user previously asked: "{last_user_prompt}". They have responded "yes" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs.\n\nConversation History:\n{" ".join([f"{msg["role"]}: {msg["text"]}" for msg in session_data])}\n\nUser: yes\nAssistant:'
+            prompt = f"{base_prompt}\n\nThe user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs.\n\nConversation History:\n{history}\n\nUser: yes\nAssistant:"
         else:
-            prompt = f'{base_prompt}\n\nConversation History:\n{" ".join([f"{msg["role"]}: {msg["text"]}" for msg in session_data])}\n\nUser: {request.prompt}\nAssistant:'
+            prompt = f"{base_prompt}\n\nConversation History:\n{history}\n\nUser: {request.prompt}\nAssistant:"
 
         if file_content:
             prompt = f"File content:\n{file_content}\n\n{prompt}"
