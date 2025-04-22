@@ -133,7 +133,20 @@ def is_greeting(prompt: str) -> bool:
     prompt_lower = prompt.lower().strip()
     return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
 
-def format_response(text):
+def should_offer_more_info(response: str, prompt: str) -> bool:
+    """Determine if 'Would you like more information?' should be added."""
+    # Don't add for greetings
+    if is_greeting(prompt):
+        return False
+    # Add if response is short (less than 100 words)
+    word_count = len(response.split())
+    if word_count < 100:
+        return True
+    # Add if response lacks specific details (e.g., no mention of IPC sections or case law)
+    has_details = any(keyword in response.lower() for keyword in ["section ", "act ", "case ", "judgment ", "court "])
+    return not has_details
+
+def format_response(text, prompt):
     """Format the response with paragraphs, bullet points, and proper hyperlinks."""
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
@@ -158,6 +171,13 @@ def format_response(text):
     final_text = '\n\n'.join(formatted)
     final_text = re.sub(r'Would you like more information\?\s*Would you like more information\?', 'Would you like more information?', final_text, flags=re.IGNORECASE)
     final_text = re.sub(r'(https?://[^\s<>]+|www\.[^\s<>]+)', r'<a href="\1" target="_blank">\1</a>', final_text)
+    
+    # Add disclaimer and conditional "Would you like more information?"
+    disclaimer = "\n\nDisclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
+    final_text += disclaimer
+    if should_offer_more_info(final_text, prompt):
+        final_text += "\n\nWould you like more information?"
+    
     return final_text
 
 # Initialize Gemini model
@@ -260,7 +280,7 @@ async def chat_with_law_assistant(
 
         try:
             response = await retry_request(generate_content)
-            assistant_response = format_response(response.text)
+            assistant_response = format_response(response.text, prompt)
             session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
             logger.debug("Response generated and session saved")
@@ -269,7 +289,7 @@ async def chat_with_law_assistant(
             try:
                 model = rotate_key()
                 response = await retry_request(generate_content)
-                assistant_response = format_response(response.text)
+                assistant_response = format_response(response.text, prompt)
                 session_data.append({"role": "assistant", "text": assistant_response})
                 save_session(session_id, session_data)
                 logger.debug("Response generated after key rotation")
