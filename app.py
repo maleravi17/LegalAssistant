@@ -14,8 +14,7 @@ import time
 import shutil
 import logging
 import tempfile
-import urllib.parse
-from difflib import SequenceMatcher
+import random
 
 # Load environment variables
 load_dotenv()
@@ -50,9 +49,9 @@ def load_session(session_id):
                 logger.info(f"Moved corrupted session file to backup: {backup_file}")
             except Exception as move_error:
                 logger.error(f"Failed to move corrupted session file: {move_error}")
-            return {"history": [], "recent_follow_ups": []}
+            return []
     logger.warning(f"Session file not found: {session_file}")
-    return {"history": [], "recent_follow_ups": []}
+    return []
 
 def save_session(session_id, session_data):
     """Save session data to a file."""
@@ -85,9 +84,8 @@ def rotate_key():
         logger.info(f"Rotated to API key index {current_key_index}")
         return initialize_gemini()
     else:
-        current_key_index = 0  # Cycle back to first key
-        logger.info(f"Cycled back to API key index {current_key_index}")
-        return initialize_gemini()
+        logger.error("All API keys have been used")
+        raise HTTPException(status_code=500, detail="All API keys have been used. Please add more keys.")
 
 async def retry_request(func, retries=3, delay=5):
     """Retry a function with exponential backoff."""
@@ -136,83 +134,33 @@ def is_greeting(prompt: str) -> bool:
     prompt_lower = prompt.lower().strip()
     return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
 
-async def generate_follow_up_question(prompt: str, response: str, recent_follow_ups: list, history_text: str) -> str:
-    """Generate a contextually relevant follow-up question using the Gemini model."""
-    follow_up_prompt = (
-        "You are a legal assistant specializing in Indian law. Based on the following conversation history, user prompt, and response, "
-        "generate a single, concise follow-up question to encourage deeper exploration of the topic. "
-        "The question should be specific to the legal context (e.g., IPC sections, Indian Acts, case laws), avoid repetition with recent questions, "
-        "and use direct phrasing (e.g., 'What defenses are available?' instead of 'Would you like'). Ensure the question is clear, relevant, and ends with a question mark.\n\n"
-        f"Conversation History:\n{history_text}\n\n"
-        f"User Prompt: {prompt}\n\n"
-        f"Response: {response}\n\n"
-        f"Recent Follow-Up Questions: {', '.join(recent_follow_ups[-3:])}\n\n"
-        "Follow-Up Question:"
-    )
+def generate_follow_up_question(prompt: str, response: str) -> str:
+    """Generate a contextually relevant follow-up question based on the prompt and response."""
+    follow_up_questions = [
+        "Would you like to explore specific case laws or judgments related to this topic?",
+        "Do you need further details on the relevant IPC sections or Indian Acts?",
+        "Would you like assistance with drafting a legal document based on this information?",
+        "Are you seeking guidance on the procedural steps to address this legal issue?",
+        "Would you like to know more about recent amendments or updates to this law?",
+        "Do you need help understanding how this applies to a specific scenario?",
+        "Would you like references to official government resources or legal databases?",
+        "Are you interested in exploring defenses or remedies available under this law?"
+    ]
+    
+    # Basic context analysis: check for keywords to tailor the follow-up
+    if "ipc section" in prompt.lower() or "indian penal code" in prompt.lower():
+        return random.choice([q for q in follow_up_questions if "IPC sections" in q or "case laws" in q])
+    elif "act" in prompt.lower() or "law" in prompt.lower():
+        return random.choice([q for q in follow_up_questions if "Indian Acts" in q or "amendments" in q])
+    elif "procedure" in prompt.lower() or "process" in prompt.lower():
+        return random.choice([q for q in follow_up_questions if "procedural steps" in q])
+    elif "case" in prompt.lower() or "judgment" in prompt.lower():
+        return random.choice([q for q in follow_up_questions if "case laws" in q])
+    else:
+        return random.choice(follow_up_questions)
 
-    async def generate_content():
-        response = model.generate_content(follow_up_prompt)
-        return response.text.strip()
-
-    try:
-        follow_up = await retry_request(generate_content)
-        # Ensure the question ends with a question mark and is not too similar to recent ones
-        if not follow_up.endswith('?'):
-            follow_up = follow_up.rstrip('.') + '?'
-        for recent in recent_follow_ups[-3:]:
-            similarity = SequenceMatcher(None, follow_up.lower(), recent.lower()).ratio()
-            if similarity > 0.8:
-                return "What specific aspect of this legal topic would you like to explore further?"
-        logger.info(f"Generated follow-up question: {follow_up}")
-        return follow_up
-    except Exception as e:
-        logger.error(f"Error generating follow-up question: {str(e)}")
-        return "What specific aspect of this legal topic would you like to explore further?"
-
-async def format_response(text, prompt: str, session_data: dict, history_text: str):
+def format_response(text, prompt: str):
     """Format the response with paragraphs, bullet points, proper hyperlinks, and a contextually relevant follow-up."""
-    # Preprocess sources to standardize format
-    source_map = {
-        "India Code": "https://www.indiacode.nic.in",
-        "Indian Kanoon": "https://indiankanoon.org",
-        "Legislative Department": "https://legislative.gov.in",
-        "Department of Personnel and Training": "https://dopt.gov.in",
-        "Bare Act": "https://www.indiacode.nic.in/handle/123456789/2262"  # Fallback for IPC
-    }
-
-    def standardize_sources(text):
-        lines = text.split('\n')
-        formatted_lines = []
-        valid_url_pattern = r'https?://[^\s<>"]+/?'
-        for line in lines:
-            line = line.strip()
-            if line.startswith("Source:"):
-                source_text = line.replace("Source:", "").strip()
-                source_text = source_text.replace("[", "").replace("]", "")  # Clean brackets
-                # Extract the first valid URL if present
-                url_match = re.search(valid_url_pattern, source_text)
-                if url_match:
-                    url = url_match.group(0).rstrip('/')
-                    source_text = re.sub(valid_url_pattern, '', source_text).strip()
-                    if source_text in source_map or any(domain in url for domain in source_map.values()):
-                        line = f"Source: <a href=\"{url}\" target=\"_blank\">{source_text or 'Indian Kanoon'}</a>"
-                    else:
-                        logger.warning(f"Skipped source with unrecognized URL: {source_text} ({url})")
-                        line = ""
-                elif source_text in source_map:
-                    if source_map[source_text]:
-                        line = f"Source: <a href=\"{source_map[source_text]}\" target=\"_blank\">{source_text}</a>"
-                    else:
-                        logger.warning(f"Skipped source without URL: {source_text}")
-                        line = ""
-                else:
-                    logger.warning(f"Skipped invalid source: {source_text}")
-                    line = ""
-            formatted_lines.append(line)
-        return '\n'.join(line for line in formatted_lines if line)
-
-    text = standardize_sources(text)
-
     # Split text into paragraphs
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
@@ -234,46 +182,17 @@ async def format_response(text, prompt: str, session_data: dict, history_text: s
             formatted.append('\n'.join(formatted_para))
         else:
             formatted.append(para)
-
+    
     final_text = '\n\n'.join(formatted)
-
-    # Remove any existing follow-up questions
-    follow_up_pattern = r'(\*\*Follow-Up Question:\*\*|[Ww]ould you like|[Dd]o you need|[Aa]re you seeking|[Aa]re you interested in)[^\n]*\?\s*$'
+    # Remove any existing follow-up questions to prevent duplication
+    follow_up_pattern = r'(Would you like|Do you need|Are you seeking|Are you interested in).+\?\s*$'
     final_text = re.sub(follow_up_pattern, '', final_text, flags=re.IGNORECASE | re.MULTILINE).strip()
-
-    # Format hyperlinks with descriptive text
-    def format_url(match):
-        url = match.group(0).rstrip('/')
-        try:
-            parsed_url = urllib.parse.urlparse(url)
-            if not parsed_url.scheme or not parsed_url.netloc:
-                logger.warning(f"Skipped invalid URL: {url}")
-                return url
-            display_text = parsed_url.netloc
-            if "indiacode.nic.in" in url:
-                display_text = "India Code"
-            elif "indiankanoon.org" in url:
-                display_text = "Indian Kanoon"
-            elif "legislative.gov.in" in url:
-                display_text = "Legislative Department"
-            elif "dopt.gov.in" in url:
-                display_text = "Department of Personnel and Training"
-            logger.info(f"Formatted URL: {url} -> {display_text}")
-            return f'<a href="{url}" target="_blank">{display_text}</a>'
-        except Exception as e:
-            logger.warning(f"Failed to parse URL {url}: {str(e)}")
-            return url
-
-    final_text = re.sub(r'https?://[^\s<>"]+/?', format_url, final_text)
-
-    # Generate a contextually relevant follow-up question
-    recent_follow_ups = session_data.get("recent_follow_ups", [])
-    follow_up = await generate_follow_up_question(prompt, final_text, recent_follow_ups, history_text)
-    recent_follow_ups.append(follow_up)
-    session_data["recent_follow_ups"] = recent_follow_ups[-5:]  # Keep last 5 for context
-    final_text = f"{final_text}\n\n**Follow-Up Question:** {follow_up}"
-
-    return final_text, session_data
+    # Append a contextually relevant follow-up question
+    follow_up = generate_follow_up_question(prompt, final_text)
+    final_text = f"{final_text}\n\n{follow_up}"
+    # Format hyperlinks
+    final_text = re.sub(r'(https?://[^\s<>]+|www\.[^\s<>]+)', r'<a href="\1" target="_blank">\1</a>', final_text)
+    return final_text
 
 # Initialize Gemini model
 model = initialize_gemini()
@@ -324,7 +243,6 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
 
         # Load session data
         session_data = load_session(session_id)
-        history = session_data.get("history", [])
 
         # Check for initial welcome message
         session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
@@ -335,52 +253,43 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         # Handle greetings
         if is_greeting(prompt):
             assistant_response = "Hello! I'm Lexi, your legal assistant for Indian law. How can I help you today?"
-            history.append({"role": "user", "text": prompt})
-            history.append({"role": "assistant", "text": assistant_response})
-            session_data["history"] = history
+            session_data.append({"role": "user", "text": prompt})
+            session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
 
         # Append user input to session history
-        history.append({"role": "user", "text": prompt})
+        session_data.append({"role": "user", "text": prompt})
 
         # Check for expanded response
         expanded_response = False
         last_user_prompt = prompt
-        if history and len(history) >= 2:
-            last_assistant_msg = history[-2] if history[-2]["role"] == "assistant" else None
-            if last_assistant_msg and re.search(r'\*\*Follow-Up Question:\*\*.*\?$', last_assistant_msg["text"], re.MULTILINE) and prompt.lower() == "yes":
+        if session_data and len(session_data) >= 2:
+            last_assistant_msg = session_data[-2] if session_data[-2]["role"] == "assistant" else None
+            if last_assistant_msg and last_assistant_msg["text"].strip().endswith(("Would you like to explore specific case laws or judgments related to this topic?",
+                                                                                 "Do you need further details on the relevant IPC sections or Indian Acts?",
+                                                                                 "Would you like assistance with drafting a legal document based on this information?",
+                                                                                 "Are you seeking guidance on the procedural steps to address this legal issue?",
+                                                                                 "Would you like to know more about recent amendments or updates to this law?",
+                                                                                 "Do you need help understanding how this applies to a specific scenario?",
+                                                                                 "Would you like references to official government resources or legal databases?",
+                                                                                 "Are you interested in exploring defenses or remedies available under this law?")) and prompt.lower() == "yes":
                 expanded_response = True
-                last_user_prompt = history[-3]["text"] if len(history) >= 3 and history[-3]["role"] == "user" else prompt
+                last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else prompt
 
         # Load base prompt
         with open("prompts/base_prompt.txt", "r") as f:
             base_prompt = f.read()
 
         # Construct conversation history
-        history_text = " ".join([f"{msg['role']}: {msg['text']}" for msg in history])
+        history = " ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])
 
-        # Construct prompt with formatting instructions
-        formatting_instruction = (
-            "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points. "
-            "Include source URLs for all legal references in the format 'Source: <URL>' using domains like indiankanoon.org, indiacode.nic.in, or legislative.gov.in. "
-            "Ensure URLs are valid and accessible. Do not include any follow-up questions, suggestions for further inquiries, or phrases like 'Would you like' in the response."
-        )
+        # Construct prompt with formatting instructions for all responses
+        formatting_instruction = "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points."
         if expanded_response:
-            prompt = (
-                f"{base_prompt}\n\n"
-                f"The user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\n"
-                f"Provide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. "
-                f"Include source websites or URLs in the format 'Source: <URL>'. {formatting_instruction}\n\n"
-                f"Conversation History:\n{history_text}\n\n"
-                f"User: yes\nAssistant:"
-            )
+            prompt = f"{base_prompt}\n\nThe user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs. {formatting_instruction}\n\nConversation History:\n{history}\n\nUser: yes\nAssistant:"
         else:
-            prompt = (
-                f"{base_prompt}\n\n{formatting_instruction}\n\n"
-                f"Conversation History:\n{history_text}\n\n"
-                f"User: {prompt}\nAssistant:"
-            )
+            prompt = f"{base_prompt}\n\n{formatting_instruction}\n\nConversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
 
         if file_content:
             prompt = f"File content:\n{file_content}\n\n{prompt}"
@@ -392,24 +301,21 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
 
         try:
             response = await retry_request(generate_content)
-            assistant_response, session_data = await format_response(response.text, prompt, session_data, history_text)
-            history.append({"role": "assistant", "text": assistant_response})
-            session_data["history"] = history
+            assistant_response = format_response(response.text, prompt)
+            session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
+        except genai.QuotaExceededError:
+            try:
+                model = rotate_key()
+                response = await retry_request(generate_content)
+                assistant_response = format_response(response.text, prompt)
+                session_data.append({"role": "assistant", "text": assistant_response})
+                save_session(session_id, session_data)
+                return ChatResponse(response=assistant_response)
+            except genai.QuotaExceededError:
+                raise HTTPException(status_code=429, detail="Quota exceeded for all API keys. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
         except Exception as e:
-            if "quota exceeded" in str(e).lower() or "429" in str(e).lower():
-                try:
-                    model = rotate_key()
-                    response = await retry_request(generate_content)
-                    assistant_response, session_data = await format_response(response.text, prompt, session_data, history_text)
-                    history.append({"role": "assistant", "text": assistant_response})
-                    session_data["history"] = history
-                    save_session(session_id, session_data)
-                    return ChatResponse(response=assistant_response)
-                except Exception as quota_error:
-                    logger.error(f"Quota exceeded for all API keys: {str(quota_error)}")
-                    raise HTTPException(status_code=429, detail="Quota exceeded for all API keys. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
             logger.error(f"Error generating content: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error generating content: {str(e)}")
 
@@ -422,9 +328,11 @@ async def regenerate_response(request: ChatRequest):
     """Regenerate a response for the given prompt."""
     if not request.prompt:
         raise HTTPException(status_code=400, detail="Prompt is required for regeneration.")
+    # Call the chat endpoint with regenerate=True
     return await chat_with_law_assistant(session_id=request.session_id, prompt=request.prompt)
 
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+i will share index.html and promts.txt in next do not genrate anything
