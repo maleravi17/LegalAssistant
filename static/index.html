@@ -394,8 +394,9 @@
         #history-list {
             list-style: none;
             padding: 0;
-            max-height: 80vh;
+            max-height: 40vh;
             overflow-y: auto;
+            margin-bottom: 20px;
         }
         #history-list li {
             padding: 8px;
@@ -417,6 +418,39 @@
         }
         #history-list li:hover.light {
             background-color: #e0e0e0;
+        }
+        #resources-section {
+            margin-top: 20px;
+        }
+        #resources-list {
+            list-style: none;
+            padding: 0;
+        }
+        #resources-list li {
+            margin: 5px 0;
+        }
+        #resources-list a {
+            display: block;
+            padding: 8px;
+            border-radius: 6px;
+            text-decoration: none;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        #resources-list a.dark {
+            background-color: #333333;
+            color: #1e88e5;
+        }
+        #resources-list a.light {
+            background-color: #f9f9f9;
+            color: #3498db;
+        }
+        #resources-list a:hover.dark {
+            background-color: #424242;
+            color: #4fc3f7;
+        }
+        #resources-list a:hover.light {
+            background-color: #e0e0e0;
+            color: #0277bd;
         }
 
         @media (min-width: 768px) {
@@ -478,6 +512,18 @@
             <h2 class="dark">Chat History</h2>
             <button id="close-sidebar" class="dark">Close</button>
             <ul id="history-list"></ul>
+            <div id="resources-section">
+                <h2 class="dark">Legal Resources</h2>
+                <ul id="resources-list">
+                    <li><a href="https://lawchakra.in/" target="_blank" class="dark">LawChakra</a></li>
+                    <li><a href="https://indialegallive.com/" target="_blank" class="dark">India Legal</a></li>
+                    <li><a href="https://lawtrend.in/" target="_blank" class="dark">Law Trend</a></li>
+                    <li><a href="https://legal.economictimes.indiatimes.com/" target="_blank" class="dark">ET LegalWorld</a></li>
+                    <li><a href="https://www.barandbench.com/" target="_blank" class="dark">Bar and Bench</a></li>
+                    <li><a href="https://www.livelaw.in/" target="_blank" class="dark">LiveLaw</a></li>
+                    <li><a href="https://theleaflet.in/" target="_blank" class="dark">The Leaflet</a></li>
+                </ul>
+            </div>
         </div>
     </div>
 
@@ -777,6 +823,10 @@
             document.querySelectorAll('#history-list li').forEach(li => {
                 li.classList.toggle('dark', isDarkTheme);
                 li.classList.toggle('light', !isDarkTheme);
+            });
+            document.querySelectorAll('#resources-list a').forEach(link => {
+                link.classList.toggle('dark', isDarkTheme);
+                link.classList.toggle('light', !isDarkTheme);
             });
             themeToggle.checked = !isDarkTheme;
         }
