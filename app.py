@@ -143,13 +143,19 @@ def should_offer_more_info(response: str, prompt: str) -> bool:
     if "Uploaded image" in response or "Error processing PDF file" in response or "No text could be extracted" in response:
         logger.debug("Skipping more info prompt for file upload response")
         return False
+    # Count words, excluding disclaimer
+    disclaimer = "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
+    response_clean = response.replace(disclaimer, '').strip()
+    word_count = len(response_clean.split())
     # Add if response is short (less than 80 words)
-    word_count = len(response.split())
     if word_count < 80:
         logger.debug(f"Adding more info prompt due to short response: {word_count} words")
         return True
-    # Add if response lacks specific legal details (e.g., no IPC sections, acts, or case law)
-    has_details = any(keyword in response.lower() for keyword in ["section ", "act ", "case ", "judgment ", "court ", "url", "http"])
+    # Add if response lacks specific legal details
+    has_details = any(keyword in response_clean.lower() for keyword in [
+        "section ", "act ", "case ", "judgment ", "court ", "url", "http", 
+        "ipc ", "article ", "law ", "legal ", "ruling ", "precedent ", "citation "
+    ])
     if not has_details:
         logger.debug("Adding more info prompt due to lack of specific legal details")
         return True
@@ -179,14 +185,40 @@ def format_response(text, prompt):
         else:
             formatted.append(para)
     final_text = '\n\n'.join(formatted)
-    final_text = re.sub(r'Would you like more information\?\s*Would you like more information\?', 'Would you like more information?', final_text, flags=re.IGNORECASE)
+    
+    # Remove any follow-up questions added by Gemini
+    follow_up_patterns = [
+        r'Would you like more information\?\s*',
+        r'Do you want more details\?\s*',
+        r'Would you like additional information\?\s*',
+        r'Need more info\?\s*',
+        r'Would you like to know more\?\s*'
+    ]
+    for pattern in follow_up_patterns:
+        if re.search(pattern, final_text, re.IGNORECASE):
+            logger.debug(f"Removing Gemini-added follow-up question matching: {pattern}")
+            final_text = re.sub(pattern, '', final_text, flags=re.IGNORECASE).strip()
+    
+    # Handle disclaimers
+    disclaimer = "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
+    disclaimer_pattern = re.escape(disclaimer)
+    if re.search(disclaimer_pattern, final_text, re.IGNORECASE):
+        logger.debug("Existing disclaimer found in response, removing it")
+        final_text = re.sub(rf'{disclaimer_pattern}\s*', '', final_text, flags=re.IGNORECASE).strip()
+    else:
+        logger.debug("No existing disclaimer found in response")
+    
+    # Add hyperlinks
     final_text = re.sub(r'(https?://[^\s<>]+|www\.[^\s<>]+)', r'<a href="\1" target="_blank">\1</a>', final_text)
     
-    # Add disclaimer and conditional "Would you like more information?"
-    disclaimer = "\n\nDisclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
-    final_text += disclaimer
+    # Add single disclaimer
+    final_text += f"\n\n{disclaimer}"
+    logger.debug("Appended single disclaimer to response")
+    
+    # Add "Would you like more information?" if appropriate
     if should_offer_more_info(final_text, prompt):
         final_text += "\n\nWould you like more information?"
+        logger.debug("Appended 'Would you like more information?' to response")
     
     return final_text
 
