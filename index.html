@@ -2,138 +2,767 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Personal Legal Assistant</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lexi</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Roboto', Arial, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 10px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        body.dark {
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+        }
+        body.light {
             background-color: #f4f4f9;
+            color: #2c3e50;
+        }
+        #container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
         }
         #chat-container {
-            max-width: 750px;
-            margin: 0 auto;
-            background-color: white;
             border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            padding: 25px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            padding: 10px;
+            position: relative;
+            width: 100%;
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+            transition: background-color 0.3s;
+            margin-bottom: 0;
+        }
+        #chat-container.dark {
+            background-color: #2b2b2b;
+        }
+        #chat-container.light {
+            background-color: white;
         }
         #chat-header {
-            font-size: 28px;
-            font-weight: bold;
+            font-size: 24px;
+            font-weight: 500;
+            margin-bottom: 5px;
+            text-align: left;
+            transition: color 0.3s;
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            z-index: 1;
+        }
+        #chat-header.dark {
+            color: #ffffff;
+        }
+        #chat-header.light {
             color: #2c3e50;
-            margin-bottom: 20px;
-            text-align: center;
+        }
+        #controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 5px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 1;
+        }
+        .control-btn {
+            padding: 5px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 18px;
+            transition: color 0.3s;
+        }
+        .control-btn.dark {
+            color: #e0e0e0;
+        }
+        .control-btn.light {
+            color: #2c3e50;
+        }
+        .control-btn:hover {
+            color: #1e88e5;
+        }
+        .control-btn::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            background-color: #333;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s;
+            z-index: 2;
+        }
+        .control-btn:hover::after {
+            opacity: 1;
+            visibility: visible;
         }
         #chat-display {
-            height: 450px;
+            height: calc(60vh - 20px);
             overflow-y: auto;
-            padding: 15px;
-            background-color: #f9f9f9;
+            padding: 5px;
             border-radius: 8px;
-            margin-bottom: 20px;
+            margin-bottom: 5px;
+            transition: background-color 0.3s;
+            flex-grow: 1;
+        }
+        #chat-display.dark {
+            background-color: #333333;
+        }
+        #chat-display.light {
+            background-color: #f9f9f9;
         }
         .message {
-            margin: 12px 0;
-            padding: 12px 16px;
+            margin: 5px 0;
+            padding: 5px;
             border-radius: 8px;
-            max-width: 85%;
+            max-width: 90%;
             line-height: 1.4;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            transition: background-color 0.3s, color 0.3s;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
         }
         .user {
+            padding: 2px 5px;
+            text-align: left;
+            white-space: pre-wrap;
+        }
+        .user.dark {
+            background-color: #1e88e5;
+            color: white;
+        }
+        .user.light {
             background-color: #3498db;
             color: white;
-            margin-left: auto;
-            text-align: right;
         }
-        .bot {
+        .bot.dark {
+            background-color: #424242;
+            color: #e0e0e0;
+        }
+        .bot.light {
             background-color: #ecf0f1;
             color: #2c3e50;
-            margin-right: auto;
+        }
+        .bot {
+            margin-left: auto;
             text-align: left;
+        }
+        .message-content {
+            text-align: left;
+            width: 100%;
+        }
+        .actions {
+            display: flex;
+            gap: 2px;
+            margin-top: 2px;
+            justify-content: flex-end;
+        }
+        .action-btn {
+            padding: 4px 8px;
+            font-size: 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+            position: relative;
+        }
+        .action-btn.dark {
+            background-color: #555555;
+            color: #e0e0e0;
+        }
+        .action-btn.light {
+            background-color: #d1d5db;
+            color: #2c3e50;
+        }
+        .action-btn:hover.dark {
+            background-color: #666666;
+        }
+        .action-btn:hover.light {
+            background-color: #b0b7c2;
+        }
+        .action-btn::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            background-color: #333;
+            color: white;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            white-space: nowrap;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s;
+            z-index: 2;
+        }
+        .action-btn:hover::after {
+            opacity: 1;
+            visibility: visible;
         }
         #chat-form {
             display: flex;
-            gap: 12px;
+            gap: 5px;
+            margin-bottom: 2px;
+            align-items: flex-end;
+            padding: 0;
+            position: relative;
         }
         #prompt {
             flex-grow: 1;
-            padding: 12px;
-            border: 1px solid #d1d5db;
+            padding: 10px 40px 10px 10px;
             border-radius: 6px;
-            font-size: 16px;
+            font-size: 14px;
+            resize: none;
+            overflow: hidden;
+            min-height: 20px;
+            line-height: 1.4;
+            transition: background-color 0.3s, color 0.3s, border-color 0.3s;
+            position: relative;
         }
-        button {
-            padding: 12px 24px;
-            background-color: #3498db;
-            color: white;
+        #prompt.dark {
+            border: 1px solid #555555;
+            background-color: #333333;
+            color: #e0e0e0;
+        }
+        #prompt.light {
+            border: 1px solid #d1d5db;
+            background-color: white;
+            color: #2c3e50;
+        }
+        #prompt:focus {
+            outline: none;
+        }
+        #prompt:focus.dark {
+            border-color: #1e88e5;
+        }
+        #prompt:focus.light {
+            border-color: #3498db;
+        }
+        .send-btn, .upload-btn {
+            padding: 8px;
             border: none;
-            border-radius: 6px;
+            border-radius: 50%;
             cursor: pointer;
             font-size: 16px;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+            position: absolute;
+            right: 4px;
+            top: 50%;
+            transform: translateY(-50%);
         }
-        button:hover {
+        .send-btn.dark {
+            background-color: #1e88e5;
+            color: white;
+        }
+        .send-btn.light {
+            background-color: #3498db;
+            color: white;
+        }
+        .send-btn:hover.dark {
+            background-color: #1565c0;
+        }
+        .send-btn:hover.light {
             background-color: #2980b9;
+        }
+        .upload-btn {
+            right: 40px;
+            padding: 6px;
+            width: 28px;
+            height: 28px;
+        }
+        .upload-btn.dark {
+            background-color: #555555;
+            color: #e0e0e0;
+        }
+        .upload-btn.light {
+            background-color: #d1d5db;
+            color: #2c3e50;
+        }
+        .upload-btn:hover.dark {
+            background-color: #666666;
+        }
+        .upload-btn:hover.light {
+            background-color: #b0b7c2;
+        }
+        #theme-switch {
+            display: flex;
+            align-items: center;
+        }
+        #theme-switch label {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 14px;
+        }
+        #theme-switch input[type="checkbox"] {
+            display: none;
+        }
+        #theme-switch .switch {
+            position: relative;
+            width: 40px;
+            height: 20px;
+            background-color: #ccc;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        #theme-switch .switch.dark {
+            background-color: #555;
+        }
+        #theme-switch .switch.light {
+            background-color: #d1d5db;
+        }
+        #theme-switch .switch::after {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background-color: white;
+            border-radius: 50%;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.3s;
+        }
+        #theme-switch input[type="checkbox"]:checked + .switch::after {
+            transform: translateX(20px);
+        }
+        #theme-switch input[type="checkbox"]:checked + .switch {
+            background-color: #555;
+        }
+        #sidebar {
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            padding: 15px;
+            display: none;
+            width: 100%;
+            margin-top: 10px;
+            transition: background-color 0.3s;
+        }
+        #sidebar.dark {
+            background-color: #2b2b2b;
+        }
+        #sidebar.light {
+            background-color: white;
+        }
+        #sidebar.open {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 100%;
+            z-index: 10;
+        }
+        #sidebar h2 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            transition: color 0.3s;
+        }
+        #sidebar h2.dark {
+            color: #ffffff;
+        }
+        #sidebar h2.light {
+            color: #2c3e50;
+        }
+        #close-sidebar {
+            float: right;
+            padding: 5px 10px;
+            font-size: 14px;
+        }
+        #history-list {
+            list-style: none;
+            padding: 0;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        #history-list li {
+            padding: 8px;
+            margin: 5px 0;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        #history-list li.dark {
+            background-color: #333333;
+            color: #e0e0e0;
+        }
+        #history-list li.light {
+            background-color: #f9f9f9;
+            color: #2c3e50;
+        }
+        #history-list li:hover.dark {
+            background-color: #424242;
+        }
+        #history-list li:hover.light {
+            background-color: #e0e0e0;
+        }
+
+        @media (min-width: 768px) {
+            #container {
+                flex-direction: row;
+                gap: 20px;
+            }
+            #chat-container {
+                flex: 2;
+                padding: 15px;
+            }
+            #sidebar {
+                flex: 1;
+                margin-top: 0;
+                position: static;
+                height: auto;
+                max-height: none;
+            }
+            #chat-header {
+                font-size: 28px;
+            }
+            #prompt, .send-btn, .upload-btn {
+                font-size: 16px;
+            }
+            #controls {
+                top: 15px;
+                right: 15px;
+            }
         }
     </style>
 </head>
-<body>
-    <div id="chat-container">
-        <div id="chat-header">Personal Legal Assistant</div>
-        <div id="chat-display">
-            <div class="message bot">Hi! I’m your Personal Legal Assistant. Ask me about Indian law, IPC sections, or anything legal!</div>
+<body class="dark">
+    <div id="container">
+        <div id="chat-container" class="dark">
+            <div id="controls">
+                <button id="new-chat" class="control-btn dark" data-tooltip="New Chat">➕</button>
+                <button id="history-toggle" class="control-btn dark" data-tooltip="History">📜</button>
+                <div id="theme-switch">
+                    <label>
+                        <input type="checkbox" id="theme-toggle">
+                        <span class="switch"></span>
+                        <span>Light</span>
+                        <span>Dark</span>
+                    </label>
+                </div>
+            </div>
+            <div id="chat-header" class="dark">Lexi</div>
+            <div id="chat-display" class="dark">
+                <div class="message bot dark">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>
+            </div>
+            <form id="chat-form">
+                <textarea id="prompt" class="dark" placeholder="Ask me anything legal..." required></textarea>
+                <label class="upload-btn dark" for="file-upload" data-tooltip="Attach">📎</label>
+                <input type="file" id="file-upload" style="display: none;" accept="image/*,application/pdf">
+                <button type="submit" class="send-btn dark">↑</button>
+            </form>
         </div>
-        <form id="chat-form">
-            <input type="text" id="prompt" placeholder="Ask me anything legal..." required>
-            <button type="submit">Send</button>
-        </form>
+        <div id="sidebar" class="dark">
+            <h2 class="dark">Chat History</h2>
+            <button id="close-sidebar" class="dark">Close</button>
+            <ul id="history-list"></ul>
+        </div>
     </div>
 
     <script>
         const chatDisplay = document.getElementById('chat-display');
         const chatForm = document.getElementById('chat-form');
         const promptInput = document.getElementById('prompt');
+        const newChatBtn = document.getElementById('new-chat');
+        const historyToggleBtn = document.getElementById('history-toggle');
+        const themeToggle = document.getElementById('theme-toggle');
+        const fileUpload = document.getElementById('file-upload');
+        const sidebar = document.getElementById('sidebar');
+        const closeSidebarBtn = document.getElementById('close-sidebar');
+        const historyList = document.getElementById('history-list');
+        const chatContainer = document.getElementById('chat-container');
+        const chatHeader = document.getElementById('chat-header');
 
-        // Generate or retrieve session ID
         let sessionId = localStorage.getItem('sessionId') || 'pla_' + Math.random().toString(36).substr(2, 9);
         localStorage.setItem('sessionId', sessionId);
+        let historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
+        let lastPrompt = null;
+        let isDarkTheme = localStorage.getItem('theme') !== 'light';
+
+        applyTheme(isDarkTheme);
+
+        promptInput.addEventListener('input', () => {
+            promptInput.style.height = 'auto';
+            promptInput.style.height = `${promptInput.scrollHeight}px`;
+        });
+
+        themeToggle.addEventListener('change', () => {
+            isDarkTheme = !themeToggle.checked;
+            applyTheme(isDarkTheme);
+            localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
+        });
+
+        fileUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const fileContent = event.target.result;
+                    addMessage('user', `Uploaded ${file.name}: [Content preview not shown, processed by bot]`);
+                    addMessage('bot', `Thank you for uploading ${file.name}. I’m analyzing it.`, true);
+                };
+                reader.readAsDataURL(file);
+                fileUpload.value = '';
+            }
+        });
+
+        newChatBtn.addEventListener('click', () => {
+            sessionId = 'pla_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('sessionId', sessionId);
+            chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
+            updateHistory();
+            sidebar.classList.remove('open');
+            sidebar.style.display = 'none';
+        });
+
+        historyToggleBtn.addEventListener('click', () => {
+            toggleSidebar();
+        });
+
+        closeSidebarBtn.addEventListener('click', () => {
+            sidebar.classList.remove('open');
+            sidebar.style.display = 'none';
+        });
+
+        sidebar.addEventListener('click', (e) => {
+            if (e.target === sidebar) {
+                sidebar.classList.remove('open');
+                sidebar.style.display = 'none';
+            }
+        });
 
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const prompt = promptInput.value.trim();
-            if (!prompt) return;
-
-            // Display user message
+            lastPrompt = prompt;
             addMessage('user', prompt);
             promptInput.value = '';
+            promptInput.style.height = 'auto';
+            const typing = addMessage('bot', 'Decoding legal mysteries...');
 
-            // Send request to FastAPI
+            const formData = new FormData();
+            formData.append('session_id', sessionId);
+            formData.append('prompt', prompt);
+            if (fileUpload.files.length > 0) {
+                formData.append('file', fileUpload.files[0]);
+                fileUpload.value = '';
+            }
+
             try {
-                const response = await fetch('/chat', {
+                const response = await tryFetch('/chat', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        session_id: sessionId,
-                        prompt: prompt
-                    })
-                });
+                    body: formData
+                }, 3, 5000);
                 const data = await response.json();
                 if (response.ok) {
-                    addMessage('bot', data.response);
+                    const message = addMessage('bot', data.response, true);
+                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { const blob = new Blob([data.response], { type: 'text/plain' }); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; a.click(); window.URL.revokeObjectURL(url); }, isDarkTheme));
+                    updateHistory();
                 } else {
-                    addMessage('bot', 'Error: ' + data.detail);
+                    addMessage('bot', `Error: ${data.detail}`);
                 }
             } catch (error) {
-                addMessage('bot', 'Sorry, I couldn’t connect to the server. Is it running?');
+                addMessage('bot', 'Sorry, I couldn’t connect to the server. Please try again.');
+            } finally {
+                chatDisplay.removeChild(typing);
             }
         });
 
-        function addMessage(role, text) {
+        async function regenerateResponse() {
+            if (!lastPrompt) return;
+            const typing = addMessage('bot', 'Regenerating response...');
+            try {
+                const response = await tryFetch('/regenerate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId, prompt: lastPrompt, regenerate: true })
+                }, 3, 5000);
+                const data = await response.json();
+                if (response.ok) {
+                    const lastUserMessage = chatDisplay.querySelector('.user:last-child');
+                    const nextBotMessage = lastUserMessage ? lastUserMessage.nextElementSibling : null;
+                    if (nextBotMessage && nextBotMessage.classList.contains('bot')) {
+                        chatDisplay.removeChild(nextBotMessage);
+                    }
+                    const message = addMessage('bot', data.response, true);
+                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { const blob = new Blob([data.response], { type: 'text/plain' }); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; a.click(); window.URL.revokeObjectURL(url); }, isDarkTheme));
+                } else {
+                    addMessage('bot', `Error: ${data.detail}`);
+                }
+            } catch (error) {
+                addMessage('bot', 'Sorry, I couldn’t regenerate the response. Please try again.');
+            } finally {
+                chatDisplay.removeChild(typing);
+            }
+        }
+
+        async function tryFetch(url, options, retries, delay) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+                    return response;
+                } catch (err) {
+                    if (i < retries - 1) {
+                        await new Promise(res => setTimeout(res, delay));
+                        continue;
+                    }
+                    throw err;
+                }
+            }
+        }
+
+        function createActionButton(text, tooltip, callback, isDarkTheme) {
+            const button = document.createElement('button');
+            button.textContent = text;
+            button.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+            button.setAttribute('data-tooltip', tooltip);
+            button.onclick = callback;
+            return button;
+        }
+
+        function addMessage(role, text, isBotWithActions = false) {
             const messageDiv = document.createElement('div');
-            messageDiv.classList.add('message', role);
-            messageDiv.textContent = text;
+            messageDiv.classList.add('message', role, isDarkTheme ? 'dark' : 'light');
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('message-content');
+            let formattedText = text;
+            if (!/<a\s+href=["'](https?:\/\/)[^\s<>]+["'][^>]*>.*<\/a>/.test(text)) {
+                formattedText = text
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/\n/g, '<br>')
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/• (.+)/g, '<li>$1</li>');
+                if (formattedText.includes('<li>')) {
+                    formattedText = formattedText.replace(/<p>(<li>.+<\/li>)<\/p>/g, '<ul>$1</ul>');
+                }
+            }
+            formattedText = `<p>${formattedText}</p>`;
+            contentDiv.innerHTML = formattedText;
+            messageDiv.appendChild(contentDiv);
+
+            messageDiv.style.height = 'auto';
+            messageDiv.style.minHeight = '0';
+
+            if (isBotWithActions) {
+                const actionsDiv = document.createElement('div');
+                actionsDiv.classList.add('actions');
+                messageDiv.appendChild(actionsDiv);
+            }
+
             chatDisplay.appendChild(messageDiv);
             chatDisplay.scrollTop = chatDisplay.scrollHeight;
+            return messageDiv;
+        }
+
+        function updateHistory() {
+            historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
+            if (!historySessions.includes(sessionId)) {
+                historySessions.push(sessionId);
+                localStorage.setItem('historySessions', JSON.stringify(historySessions));
+            }
+            historyList.innerHTML = '';
+            if (historySessions.length === 0) {
+                const li = document.createElement('li');
+                li.textContent = "No history available";
+                historyList.appendChild(li);
+            }
+            historySessions.forEach(id => {
+                const li = document.createElement('li');
+                li.classList.add(isDarkTheme ? 'dark' : 'light');
+                li.textContent = `Session ${id.slice(4, 10)}`;
+                li.addEventListener('click', () => {
+                    sessionId = id;
+                    localStorage.setItem('sessionId', id);
+                    chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
+                    sidebar.classList.remove('open');
+                    sidebar.style.display = 'none';
+                });
+                historyList.appendChild(li);
+            });
+        }
+
+        function toggleSidebar() {
+            if (sidebar.style.display === 'none') {
+                sidebar.style.display = 'block';
+                sidebar.classList.add('open');
+            } else {
+                sidebar.classList.remove('open');
+                sidebar.style.display = 'none';
+            }
+        }
+
+        function applyTheme(dark) {
+            isDarkTheme = dark;
+            document.body.classList.toggle('dark', isDarkTheme);
+            document.body.classList.toggle('light', !isDarkTheme);
+            chatContainer.classList.toggle('dark', isDarkTheme);
+            chatContainer.classList.toggle('light', !isDarkTheme);
+            chatHeader.classList.toggle('dark', isDarkTheme);
+            chatHeader.classList.toggle('light', !isDarkTheme);
+            chatDisplay.classList.toggle('dark', isDarkTheme);
+            chatDisplay.classList.toggle('light', !isDarkTheme);
+            promptInput.classList.toggle('dark', isDarkTheme);
+            promptInput.classList.toggle('light', !isDarkTheme);
+            sidebar.classList.toggle('dark', isDarkTheme);
+            sidebar.classList.toggle('light', !isDarkTheme);
+            sidebar.querySelector('h2').classList.toggle('dark', isDarkTheme);
+            sidebar.querySelector('h2').classList.toggle('light', !isDarkTheme);
+            newChatBtn.classList.toggle('dark', isDarkTheme);
+            newChatBtn.classList.toggle('light', !isDarkTheme);
+            historyToggleBtn.classList.toggle('dark', isDarkTheme);
+            historyToggleBtn.classList.toggle('light', !isDarkTheme);
+            closeSidebarBtn.classList.toggle('dark', isDarkTheme);
+            closeSidebarBtn.classList.toggle('light', !isDarkTheme);
+            document.querySelectorAll('.message').forEach(msg => {
+                msg.classList.toggle('dark', isDarkTheme);
+                msg.classList.toggle('light', !isDarkTheme);
+            });
+            document.querySelectorAll('.action-btn').forEach(btn => {
+                btn.classList.toggle('dark', isDarkTheme);
+                btn.classList.toggle('light', !isDarkTheme);
+            });
+            document.querySelectorAll('.control-btn').forEach(btn => {
+                btn.classList.toggle('dark', isDarkTheme);
+                btn.classList.toggle('light', !isDarkTheme);
+            });
+            document.querySelectorAll('#history-list li').forEach(li => {
+                li.classList.toggle('dark', isDarkTheme);
+                li.classList.toggle('light', !isDarkTheme);
+            });
+            themeToggle.checked = !isDarkTheme;
         }
     </script>
 </body>
