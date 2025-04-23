@@ -164,26 +164,47 @@ def should_offer_more_info(response: str, prompt: str) -> bool:
 
 def format_response(text, prompt):
     """Format the response with paragraphs, bullet points, and proper hyperlinks."""
-    paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
+    # Split into paragraphs, preserving bullet structure
+    paragraphs = text.split('\n\n')
     formatted = []
+    
     for para in paragraphs:
         para = para.strip()
         if not para:
             continue
-        if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
-            lines = para.split('\n')
-            formatted_para = []
-            for line in lines:
-                line = line.strip()
+        lines = para.split('\n')
+        formatted_para = []
+        is_bullet_list = any(line.strip().startswith('* ') or line.strip().startswith('- ') for line in lines)
+        
+        if is_bullet_list:
+            # Process bullet lists with nesting
+            i = 0
+            while i < len(lines):
+                line = lines[i].strip()
+                if not line:
+                    i += 1
+                    continue
+                # Main bullet
                 if line.startswith('* ') or line.startswith('- '):
                     formatted_para.append(f"• {line[2:]}")
+                    i += 1
+                    # Check for sub-bullets (indented with spaces)
+                    while i < len(lines) and lines[i].strip().startswith('  * ') or lines[i].strip().startswith('  - '):
+                        sub_line = lines[i].strip()[2:].strip()  # Remove indent and bullet
+                        formatted_para.append(f"  • {sub_line}")
+                        i += 1
+                # Bold headings
                 elif line.startswith('**') and line.endswith('**'):
-                    formatted_para.append(f"\n**{line[2:-2]}**\n")
+                    formatted_para.append(f"**{line[2:-2]}**")
+                    i += 1
                 else:
                     formatted_para.append(line)
-            formatted.append('\n'.join(formatted_para))
+                    i += 1
+            formatted.append('\n\n'.join(formatted_para))
         else:
+            # Non-bullet paragraph
             formatted.append(para)
+    
     final_text = '\n\n'.join(formatted)
     
     # Remove any follow-up questions added by Gemini
