@@ -16,6 +16,7 @@ import logging
 import tempfile
 import random
 import urllib.parse
+from difflib import SequenceMatcher
 
 # Load environment variables
 load_dotenv()
@@ -136,44 +137,74 @@ def is_greeting(prompt: str) -> bool:
     prompt_lower = prompt.lower().strip()
     return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
 
-def generate_follow_up_question(prompt: str, response: str, recent_follow_ups: list) -> str:
-    """Generate a contextually relevant follow-up question based on the prompt and response."""
-    follow_up_questions = [
-        "Would you like to explore specific case laws related to this topic?",
-        "Do you need details on relevant IPC sections or Indian Acts?",
-        "Would you like assistance with drafting a legal document?",
-        "Are you seeking guidance on procedural steps for this issue?",
-        "Would you like information on recent amendments to this law?",
-        "Do you need help applying this to a specific scenario?",
-        "Would you like references to official government resources?",
-        "Are you interested in defenses or remedies under this law?"
-    ]
+async def generate_follow_up_question(prompt: str, response: str, recent_follow_ups: list, history_text: str) -> str:
+    """Generate a contextually relevant follow-up question using the Gemini model."""
+    follow_up_prompt = (
+        "You are a legal assistant specializing in Indian law. Based on the following conversation history, user prompt, and response, "
+        "generate a single, concise, and contextually relevant follow-up question to encourage deeper exploration of the topic. "
+        "The question should be specific to the legal context (e.g., IPC sections, Indian Acts, case laws), avoid repetition with recent questions, "
+        "and not use phrases like 'Would you like' or 'Do you need'. Ensure the question is clear, relevant, and ends with a question mark.\n\n"
+        f"Conversation History:\n{history_text}\n\n"
+        f"User Prompt: {prompt}\n\n"
+        f"Response: {response}\n\n"
+        f"Recent Follow-Up Questions: {', '.join(recent_follow_ups[-3:])}\n\n"
+        "Follow-Up Question:"
+    )
 
-    # Filter out recently used questions (last 3 responses)
-    available_questions = [q for q in follow_up_questions if q not in recent_follow_ups[-3:]]
+    async def generate_content():
+        response = model.generate_content(follow_up_prompt)
+        return response.text.strip()
 
-    # If all questions have been used recently, reset to full list
-    if not available_questions:
-        available_questions = follow_up_questions
+    try:
+        follow_up = await retry_request(generate_content)
+        # Ensure the question ends with a question mark and is not too similar to recent ones
+        if not follow_up.endswith('?'):
+            follow_up = follow_up.rstrip('.') + '?'
+        for recent in recent_follow_ups[-3:]:
+            similarity = SequenceMatcher(None, follow_up.lower(), recent.lower()).ratio()
+            if similarity > 0.8:
+                return "What specific aspect of this legal topic would you like to explore further?"
+        logger.info(f"Generated follow-up question: {follow_up}")
+        return follow_up
+    except Exception as e:
+        logger.error(f"Error generating follow-up question: {str(e)}")
+        return "What specific aspect of this legal topic would you like to explore further?"
 
-    # Prioritize questions based on context
-    if "ipc section" in prompt.lower() or "indian penal code" in prompt.lower():
-        prioritized = [q for q in available_questions if "IPC sections" in q or "case laws" in q]
-        return random.choice(prioritized) if prioritized else random.choice(available_questions)
-    elif "act" in prompt.lower() or "law" in prompt.lower():
-        prioritized = [q for q in available_questions if "Indian Acts" in q or "amendments" in q]
-        return random.choice(prioritized) if prioritized else random.choice(available_questions)
-    elif "procedure" in prompt.lower() or "process" in prompt.lower():
-        prioritized = [q for q in available_questions if "procedural steps" in q]
-        return random.choice(prioritized) if prioritized else random.choice(available_questions)
-    elif "case" in prompt.lower() or "judgment" in prompt.lower():
-        prioritized = [q for q in available_questions if "case laws" in q]
-        return random.choice(prioritized) if prioritized else random.choice(available_questions)
-    else:
-        return random.choice(available_questions)
-
-def format_response(text, prompt: str, session_data: dict):
+def format_response(text, prompt: str, session_data: dict, history_text: str):
     """Format the response with paragraphs, bullet points, proper hyperlinks, and a contextually relevant follow-up."""
+    # Preprocess sources to standardize format
+    source_map = {
+        "India Code": "https://www.indiacode.nic.in",
+        "Indian Kanoon": "https://indiankanoon.org",
+        "Legislative Department": "https://legislative.gov.in",
+        "Department of Personnel and Training": "https://dopt.gov.in",
+        "Bare Act": "https://www.indiacode.nic.in/handle/123456789/2262"  # Fallback for IPC
+    }
+
+    def standardize_sources(text):
+        lines = text.split('\n')
+        formatted_lines = []
+        for line in lines:
+            line = line.strip()
+            if line.startswith("Source:"):
+                source_text = line.replace("Source:", "").strip()
+                source_text = source_text.replace("[", "").replace("]", "")  # Clean malformed brackets
+                if source_text in source_map:
+                    if source_map[source_text]:
+                        line = f"Source: <a href=\"{source_map[source_text]}\" target=\"_blank\">{source_text}</a>"
+                    else:
+                        logger.warning(f"Skipped source without URL: {source_text}")
+                        line = ""
+                elif re.match(r'https?://[^\s<>]+', source_text):
+                    line = f"Source: <a href=\"{source_text}\" target=\"_blank\">{source_text}</a>"
+                else:
+                    logger.warning(f"Skipped invalid source: {source_text}")
+                    line = ""
+            formatted_lines.append(line)
+        return '\n'.join(line for line in formatted_lines if line)
+
+    text = standardize_sources(text)
+
     # Split text into paragraphs
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
@@ -198,29 +229,38 @@ def format_response(text, prompt: str, session_data: dict):
 
     final_text = '\n\n'.join(formatted)
 
-    # Remove any existing follow-up questions to prevent duplication
-    follow_up_pattern = r'(Would you like|Do you need|Are you seeking|Are you interested in).+\?\s*$'
+    # Remove any existing follow-up questions
+    follow_up_pattern = r'(\*\*Follow-Up Question:\*\*|[Ww]ould you like|[Dd]o you need|[Aa]re you seeking|[Aa]re you interested in)[^\n]*\?\s*$'
     final_text = re.sub(follow_up_pattern, '', final_text, flags=re.IGNORECASE | re.MULTILINE).strip()
 
     # Format hyperlinks with descriptive text
     def format_url(match):
         url = match.group(0)
-        parsed_url = urllib.parse.urlparse(url)
-        # Simplify URL for display (remove query params)
-        display_text = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}"
-        if "indiacode.nic.in" in url:
-            display_text = "India Code"
-        elif "legislative.gov.in" in url:
-            display_text = "Legislative Department"
-        elif "dopt.gov.in" in url:
-            display_text = "Department of Personnel and Training"
-        return f'<a href="{url}" target="_blank">{display_text}</a>'
+        try:
+            parsed_url = urllib.parse.urlparse(url)
+            if not parsed_url.scheme or not parsed_url.netloc:
+                logger.warning(f"Skipped invalid URL: {url}")
+                return url
+            display_text = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            if "indiacode.nic.in" in url:
+                display_text = "India Code"
+            elif "indiankanoon.org" in url:
+                display_text = "Indian Kanoon"
+            elif "legislative.gov.in" in url:
+                display_text = "Legislative Department"
+            elif "dopt.gov.in" in url:
+                display_text = "Department of Personnel and Training"
+            logger.info(f"Formatted URL: {url} -> {display_text}")
+            return f'<a href="{url}" target="_blank">{display_text}</a>'
+        except Exception as e:
+            logger.warning(f"Failed to parse URL {url}: {str(e)}")
+            return url
 
     final_text = re.sub(r'(https?://[^\s<>]+|www\.[^\s<>]+)', format_url, final_text)
 
-    # Append a contextually relevant follow-up question
+    # Generate a contextually relevant follow-up question
     recent_follow_ups = session_data.get("recent_follow_ups", [])
-    follow_up = generate_follow_up_question(prompt, final_text, recent_follow_ups)
+    follow_up = asyncio.run(generate_follow_up_question(prompt, final_text, recent_follow_ups, history_text))
     recent_follow_ups.append(follow_up)
     session_data["recent_follow_ups"] = recent_follow_ups[-5:]  # Keep last 5 for context
     final_text = f"{final_text}\n\n**Follow-Up Question:** {follow_up}"
@@ -301,14 +341,7 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         last_user_prompt = prompt
         if history and len(history) >= 2:
             last_assistant_msg = history[-2] if history[-2]["role"] == "assistant" else None
-            if last_assistant_msg and last_assistant_msg["text"].strip().endswith(("Would you like to explore specific case laws related to this topic?",
-                                                                                 "Do you need details on relevant IPC sections or Indian Acts?",
-                                                                                 "Would you like assistance with drafting a legal document?",
-                                                                                 "Are you seeking guidance on procedural steps for this issue?",
-                                                                                 "Would you like information on recent amendments to this law?",
-                                                                                 "Do you need help applying this to a specific scenario?",
-                                                                                 "Would you like references to official government resources?",
-                                                                                 "Are you interested in defenses or remedies under this law?")) and prompt.lower() == "yes":
+            if last_assistant_msg and re.search(r'\*\*Follow-Up Question:\*\*.*\?$', last_assistant_msg["text"], re.MULTILINE) and prompt.lower() == "yes":
                 expanded_response = True
                 last_user_prompt = history[-3]["text"] if len(history) >= 3 and history[-3]["role"] == "user" else prompt
 
@@ -319,12 +352,27 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         # Construct conversation history
         history_text = " ".join([f"{msg['role']}: {msg['text']}" for msg in history])
 
-        # Construct prompt with formatting instructions for all responses
-        formatting_instruction = "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points."
+        # Construct prompt with formatting instructions
+        formatting_instruction = (
+            "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points. "
+            "Include source URLs for all legal references in the format 'Source: <URL>' using domains like indiankanoon.org, indiacode.nic.in, or legislative.gov.in. "
+            "Do not include any follow-up questions, suggestions for further inquiries, or phrases like 'Would you like' in the response."
+        )
         if expanded_response:
-            prompt = f"{base_prompt}\n\nThe user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs. {formatting_instruction}\n\nConversation History:\n{history_text}\n\nUser: yes\nAssistant:"
+            prompt = (
+                f"{base_prompt}\n\n"
+                f"The user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\n"
+                f"Provide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. "
+                f"Include source websites or URLs in the format 'Source: <URL>'. {formatting_instruction}\n\n"
+                f"Conversation History:\n{history_text}\n\n"
+                f"User: yes\nAssistant:"
+            )
         else:
-            prompt = f"{base_prompt}\n\n{formatting_instruction}\n\nConversation History:\n{history_text}\n\nUser: {prompt}\nAssistant:"
+            prompt = (
+                f"{base_prompt}\n\n{formatting_instruction}\n\n"
+                f"Conversation History:\n{history_text}\n\n"
+                f"User: {prompt}\nAssistant:"
+            )
 
         if file_content:
             prompt = f"File content:\n{file_content}\n\n{prompt}"
@@ -336,7 +384,7 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
 
         try:
             response = await retry_request(generate_content)
-            assistant_response, session_data = format_response(response.text, prompt, session_data)
+            assistant_response, session_data = format_response(response.text, prompt, session_data, history_text)
             history.append({"role": "assistant", "text": assistant_response})
             session_data["history"] = history
             save_session(session_id, session_data)
@@ -345,7 +393,7 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
             try:
                 model = rotate_key()
                 response = await retry_request(generate_content)
-                assistant_response, session_data = format_response(response.text, prompt, session_data)
+                assistant_response, session_data = format_response(response.text, prompt, session_data, history_text)
                 history.append({"role": "assistant", "text": assistant_response})
                 session_data["history"] = history
                 save_session(session_id, session_data)
