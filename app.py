@@ -161,6 +161,7 @@ def generate_follow_up_question(prompt: str, response: str) -> str:
 
 def format_response(text, prompt: str):
     """Format the response with paragraphs, bullet points, proper hyperlinks, and a contextually relevant follow-up."""
+    # Split text into paragraphs
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
     for para in paragraphs:
@@ -183,8 +184,9 @@ def format_response(text, prompt: str):
             formatted.append(para)
     
     final_text = '\n\n'.join(formatted)
-    # Remove any duplicate follow-up questions
-    final_text = re.sub(r'(Would you like .+\?\s*)+$', '', final_text, flags=re.IGNORECASE)
+    # Remove any existing follow-up questions to prevent duplication
+    follow_up_pattern = r'(Would you like|Do you need|Are you seeking|Are you interested in).+\?\s*$'
+    final_text = re.sub(follow_up_pattern, '', final_text, flags=re.IGNORECASE | re.MULTILINE).strip()
     # Append a contextually relevant follow-up question
     follow_up = generate_follow_up_question(prompt, final_text)
     final_text = f"{final_text}\n\n{follow_up}"
@@ -235,6 +237,10 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         if file:
             file_content = await process_uploaded_file(file)
 
+        # Validate session_id
+        if not session_id:
+            raise HTTPException(status_code=422, detail="session_id is required")
+
         # Load session data
         session_data = load_session(session_id)
 
@@ -278,11 +284,12 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         # Construct conversation history
         history = " ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])
 
-        # Construct prompt
+        # Construct prompt with formatting instructions for all responses
+        formatting_instruction = "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points."
         if expanded_response:
-            prompt = f"{base_prompt}\n\nThe user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs.\n\nConversation History:\n{history}\n\nUser: yes\nAssistant:"
+            prompt = f"{base_prompt}\n\nThe user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs. {formatting_instruction}\n\nConversation History:\n{history}\n\nUser: yes\nAssistant:"
         else:
-            prompt = f"{base_prompt}\n\nConversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
+            prompt = f"{base_prompt}\n\n{formatting_instruction}\n\nConversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
 
         if file_content:
             prompt = f"File content:\n{file_content}\n\n{prompt}"
