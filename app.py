@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
@@ -228,7 +228,7 @@ class ChatResponse(BaseModel):
     response: str
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(None)):
+async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = Form(...), file: UploadFile = File(None)):
     global model
     try:
         file_content = ""
@@ -236,28 +236,28 @@ async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(
             file_content = await process_uploaded_file(file)
 
         # Load session data
-        session_data = load_session(request.session_id)
+        session_data = load_session(session_id)
 
         # Check for initial welcome message
-        session_file = os.path.join(SESSION_FOLDER, f"{request.session_id}.json")
-        if not os.path.exists(session_file) and not request.prompt.strip() and not request.regenerate:
+        session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
+        if not os.path.exists(session_file) and not prompt.strip():
             assistant_response = "Okay, I'm ready to assist you with your legal questions related to Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and other relevant topics. I can also help determine legal rights and official government procedures within my area of expertise. Please ask your question."
             return ChatResponse(response=assistant_response)
 
         # Handle greetings
-        if is_greeting(request.prompt):
+        if is_greeting(prompt):
             assistant_response = "Hello! I'm Lexi, your legal assistant for Indian law. How can I help you today?"
-            session_data.append({"role": "user", "text": request.prompt})
+            session_data.append({"role": "user", "text": prompt})
             session_data.append({"role": "assistant", "text": assistant_response})
-            save_session(request.session_id, session_data)
+            save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
 
         # Append user input to session history
-        session_data.append({"role": "user", "text": request.prompt})
+        session_data.append({"role": "user", "text": prompt})
 
         # Check for expanded response
         expanded_response = False
-        last_user_prompt = request.prompt
+        last_user_prompt = prompt
         if session_data and len(session_data) >= 2:
             last_assistant_msg = session_data[-2] if session_data[-2]["role"] == "assistant" else None
             if last_assistant_msg and last_assistant_msg["text"].strip().endswith(("Would you like to explore specific case laws or judgments related to this topic?",
@@ -267,9 +267,9 @@ async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(
                                                                                  "Would you like to know more about recent amendments or updates to this law?",
                                                                                  "Do you need help understanding how this applies to a specific scenario?",
                                                                                  "Would you like references to official government resources or legal databases?",
-                                                                                 "Are you interested in exploring defenses or remedies available under this law?")) and request.prompt.lower() == "yes":
+                                                                                 "Are you interested in exploring defenses or remedies available under this law?")) and prompt.lower() == "yes":
                 expanded_response = True
-                last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else request.prompt
+                last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else prompt
 
         # Load base prompt
         with open("prompts/base_prompt.txt", "r") as f:
@@ -282,7 +282,7 @@ async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(
         if expanded_response:
             prompt = f"{base_prompt}\n\nThe user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs.\n\nConversation History:\n{history}\n\nUser: yes\nAssistant:"
         else:
-            prompt = f"{base_prompt}\n\nConversation History:\n{history}\n\nUser: {request.prompt}\nAssistant:"
+            prompt = f"{base_prompt}\n\nConversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
 
         if file_content:
             prompt = f"File content:\n{file_content}\n\n{prompt}"
@@ -294,17 +294,17 @@ async def chat_with_law_assistant(request: ChatRequest, file: UploadFile = File(
 
         try:
             response = await retry_request(generate_content)
-            assistant_response = format_response(response.text, request.prompt)
+            assistant_response = format_response(response.text, prompt)
             session_data.append({"role": "assistant", "text": assistant_response})
-            save_session(request.session_id, session_data)
+            save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
         except genai.QuotaExceededError:
             try:
                 model = rotate_key()
                 response = await retry_request(generate_content)
-                assistant_response = format_response(response.text, request.prompt)
+                assistant_response = format_response(response.text, prompt)
                 session_data.append({"role": "assistant", "text": assistant_response})
-                save_session(request.session_id, session_data)
+                save_session(session_id, session_data)
                 return ChatResponse(response=assistant_response)
             except genai.QuotaExceededError:
                 raise HTTPException(status_code=429, detail="Quota exceeded for all API keys. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
@@ -322,7 +322,7 @@ async def regenerate_response(request: ChatRequest):
     if not request.prompt:
         raise HTTPException(status_code=400, detail="Prompt is required for regeneration.")
     # Call the chat endpoint with regenerate=True
-    return await chat_with_law_assistant(ChatRequest(session_id=request.session_id, prompt=request.prompt, regenerate=True))
+    return await chat_with_law_assistant(session_id=request.session_id, prompt=request.prompt)
 
 if __name__ == "__main__":
     import uvicorn
