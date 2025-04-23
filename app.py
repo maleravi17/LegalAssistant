@@ -136,28 +136,44 @@ def is_greeting(prompt: str) -> bool:
 
 def generate_follow_up_question(prompt: str, response: str) -> str:
     """Generate a contextually relevant follow-up question based on the prompt and response."""
-    follow_up_questions = [
-        "Would you like to explore specific case laws or judgments related to this topic?",
-        "Do you need further details on the relevant IPC sections or Indian Acts?",
-        "Would you like assistance with drafting a legal document based on this information?",
-        "Are you seeking guidance on the procedural steps to address this legal issue?",
-        "Would you like to know more about recent amendments or updates to this law?",
-        "Do you need help understanding how this applies to a specific scenario?",
-        "Would you like references to official government resources or legal databases?",
-        "Are you interested in exploring defenses or remedies available under this law?"
-    ]
+    prompt_lower = prompt.lower().strip()
     
-    # Basic context analysis: check for keywords to tailor the follow-up
-    if "ipc section" in prompt.lower() or "indian penal code" in prompt.lower():
-        return random.choice([q for q in follow_up_questions if "IPC sections" in q or "case laws" in q])
-    elif "act" in prompt.lower() or "law" in prompt.lower():
-        return random.choice([q for q in follow_up_questions if "Indian Acts" in q or "amendments" in q])
-    elif "procedure" in prompt.lower() or "process" in prompt.lower():
-        return random.choice([q for q in follow_up_questions if "procedural steps" in q])
-    elif "case" in prompt.lower() or "judgment" in prompt.lower():
-        return random.choice([q for q in follow_up_questions if "case laws" in q])
+    # Analyze the prompt and response for context to determine if more information is needed
+    if "ipc section" in prompt_lower or "indian penal code" in prompt_lower:
+        if not re.search(r"Section \d+[A-Z]?", response, re.IGNORECASE):
+            return "Could you specify which IPC section you're interested in, or would you like me to provide details on relevant sections for your query?"
+        return "Would you like me to provide specific case laws or judgments related to the IPC sections mentioned?"
+    
+    elif "act" in prompt_lower or "law" in prompt_lower:
+        if not re.search(r"(act|law) of \d{4}", response, re.IGNORECASE):
+            return "Could you clarify which Indian Act or law you are referring to, or would you like information on related legislation?"
+        return "Would you like to know about recent amendments or practical applications of the mentioned Act?"
+    
+    elif "procedure" in prompt_lower or "process" in prompt_lower:
+        if not re.search(r"(step|procedure|process)", response, re.IGNORECASE):
+            return "Could you provide more details about the specific procedure you're inquiring about?"
+        return "Would you like a detailed breakdown of the procedural steps or assistance with related documentation?"
+    
+    elif "case" in prompt_lower or "judgment" in prompt_lower:
+        if not re.search(r"\b(case|judgment)\b", response, re.IGNORECASE):
+            return "Could you specify the case or judgment you're referring to, or would you like me to find relevant cases?"
+        return "Would you like further details on the cited case, such as its implications or related judgments?"
+    
+    elif "passport" in prompt_lower or "visa" in prompt_lower:
+        if not re.search(r"(passport|visa)", response, re.IGNORECASE):
+            return "Could you clarify the specific passport or visa issue you need assistance with?"
+        return "Would you like guidance on the application process or information on resolving specific issues?"
+    
+    elif "rights" in prompt_lower or "legal rights" in prompt_lower:
+        if not re.search(r"(right|entitlement)", response, re.IGNORECASE):
+            return "Could you provide more context about the legal rights you're inquiring about?"
+        return "Would you like to explore specific remedies or protections available under the mentioned rights?"
+    
     else:
-        return random.choice(follow_up_questions)
+        # Default follow-up if no specific context is detected
+        if not prompt.strip():
+            return "Could you provide more details or ask a specific legal question so I can assist you better?"
+        return "Could you clarify or provide additional details about your query to help me provide a more tailored response?"
 
 def format_response(text, prompt: str):
     """Format the response with paragraphs, bullet points, proper hyperlinks, and a contextually relevant follow-up."""
@@ -185,7 +201,7 @@ def format_response(text, prompt: str):
     
     final_text = '\n\n'.join(formatted)
     # Remove any existing follow-up questions to prevent duplication
-    follow_up_pattern = r'(Would you like|Do you need|Are you seeking|Are you interested in).+\?\s*$'
+    follow_up_pattern = r'(Would you like|Do you need|Are you seeking|Are you interested in|Could you).+\?\s*$'
     final_text = re.sub(follow_up_pattern, '', final_text, flags=re.IGNORECASE | re.MULTILINE).strip()
     # Append a contextually relevant follow-up question
     follow_up = generate_follow_up_question(prompt, final_text)
@@ -273,7 +289,14 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
                                                                                  "Would you like to know more about recent amendments or updates to this law?",
                                                                                  "Do you need help understanding how this applies to a specific scenario?",
                                                                                  "Would you like references to official government resources or legal databases?",
-                                                                                 "Are you interested in exploring defenses or remedies available under this law?")) and prompt.lower() == "yes":
+                                                                                 "Are you interested in exploring defenses or remedies available under this law?",
+                                                                                 "Could you specify which IPC section you're interested in, or would you like me to provide details on relevant sections for your query?",
+                                                                                 "Could you clarify which Indian Act or law you are referring to, or would you like information on related legislation?",
+                                                                                 "Could you provide more details about the specific procedure you're inquiring about?",
+                                                                                 "Could you specify the case or judgment you're referring to, or would you like me to find relevant cases?",
+                                                                                 "Could you clarify the specific passport or visa issue you need assistance with?",
+                                                                                 "Could you provide more context about the legal rights you're inquiring about?",
+                                                                                 "Could you clarify or provide additional details about your query to help me provide a more tailored response?")) and prompt.lower() == "yes":
                 expanded_response = True
                 last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else prompt
 
