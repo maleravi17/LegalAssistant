@@ -134,49 +134,8 @@ def is_greeting(prompt: str) -> bool:
     prompt_lower = prompt.lower().strip()
     return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
 
-def generate_follow_up_question(prompt: str, response: str) -> str:
-    """Generate a contextually relevant follow-up question based on the prompt and response."""
-    prompt_lower = prompt.lower().strip()
-    
-    # Analyze the prompt and response for context to determine if more information is needed
-    if "ipc section" in prompt_lower or "indian penal code" in prompt_lower:
-        if not re.search(r"Section \d+[A-Z]?", response, re.IGNORECASE):
-            return "Could you specify which IPC section you're interested in, or would you like me to provide details on relevant sections for your query?"
-        return "Would you like me to provide specific case laws or judgments related to the IPC sections mentioned?"
-    
-    elif "act" in prompt_lower or "law" in prompt_lower:
-        if not re.search(r"(act|law) of \d{4}", response, re.IGNORECASE):
-            return "Could you clarify which Indian Act or law you are referring to, or would you like information on related legislation?"
-        return "Would you like to know about recent amendments or practical applications of the mentioned Act?"
-    
-    elif "procedure" in prompt_lower or "process" in prompt_lower:
-        if not re.search(r"(step|procedure|process)", response, re.IGNORECASE):
-            return "Could you provide more details about the specific procedure you're inquiring about?"
-        return "Would you like a detailed breakdown of the procedural steps or assistance with related documentation?"
-    
-    elif "case" in prompt_lower or "judgment" in prompt_lower:
-        if not re.search(r"\b(case|judgment)\b", response, re.IGNORECASE):
-            return "Could you specify the case or judgment you're referring to, or would you like me to find relevant cases?"
-        return "Would you like further details on the cited case, such as its implications or related judgments?"
-    
-    elif "passport" in prompt_lower or "visa" in prompt_lower:
-        if not re.search(r"(passport|visa)", response, re.IGNORECASE):
-            return "Could you clarify the specific passport or visa issue you need assistance with?"
-        return "Would you like guidance on the application process or information on resolving specific issues?"
-    
-    elif "rights" in prompt_lower or "legal rights" in prompt_lower:
-        if not re.search(r"(right|entitlement)", response, re.IGNORECASE):
-            return "Could you provide more context about the legal rights you're inquiring about?"
-        return "Would you like to explore specific remedies or protections available under the mentioned rights?"
-    
-    else:
-        # Default follow-up if no specific context is detected
-        if not prompt.strip():
-            return "Could you provide more details or ask a specific legal question so I can assist you better?"
-        return "Could you clarify or provide additional details about your query to help me provide a more tailored response?"
-
 def format_response(text, prompt: str):
-    """Format the response with paragraphs, bullet points, proper hyperlinks, and a contextually relevant follow-up."""
+    """Format the response with paragraphs, bullet points, and proper hyperlinks."""
     # Split text into paragraphs
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
@@ -200,12 +159,6 @@ def format_response(text, prompt: str):
             formatted.append(para)
     
     final_text = '\n\n'.join(formatted)
-    # Remove any existing follow-up questions to prevent duplication
-    follow_up_pattern = r'(Would you like|Do you need|Are you seeking|Are you interested in|Could you).+\?\s*$'
-    final_text = re.sub(follow_up_pattern, '', final_text, flags=re.IGNORECASE | re.MULTILINE).strip()
-    # Append a contextually relevant follow-up question
-    follow_up = generate_follow_up_question(prompt, final_text)
-    final_text = f"{final_text}\n\n{follow_up}"
     # Format hyperlinks
     final_text = re.sub(r'(https?://[^\s<>]+|www\.[^\s<>]+)', r'<a href="\1" target="_blank">\1</a>', final_text)
     return final_text
@@ -277,29 +230,6 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         # Append user input to session history
         session_data.append({"role": "user", "text": prompt})
 
-        # Check for expanded response
-        expanded_response = False
-        last_user_prompt = prompt
-        if session_data and len(session_data) >= 2:
-            last_assistant_msg = session_data[-2] if session_data[-2]["role"] == "assistant" else None
-            if last_assistant_msg and last_assistant_msg["text"].strip().endswith(("Would you like to explore specific case laws or judgments related to this topic?",
-                                                                                 "Do you need further details on the relevant IPC sections or Indian Acts?",
-                                                                                 "Would you like assistance with drafting a legal document based on this information?",
-                                                                                 "Are you seeking guidance on the procedural steps to address this legal issue?",
-                                                                                 "Would you like to know more about recent amendments or updates to this law?",
-                                                                                 "Do you need help understanding how this applies to a specific scenario?",
-                                                                                 "Would you like references to official government resources or legal databases?",
-                                                                                 "Are you interested in exploring defenses or remedies available under this law?",
-                                                                                 "Could you specify which IPC section you're interested in, or would you like me to provide details on relevant sections for your query?",
-                                                                                 "Could you clarify which Indian Act or law you are referring to, or would you like information on related legislation?",
-                                                                                 "Could you provide more details about the specific procedure you're inquiring about?",
-                                                                                 "Could you specify the case or judgment you're referring to, or would you like me to find relevant cases?",
-                                                                                 "Could you clarify the specific passport or visa issue you need assistance with?",
-                                                                                 "Could you provide more context about the legal rights you're inquiring about?",
-                                                                                 "Could you clarify or provide additional details about your query to help me provide a more tailored response?")) and prompt.lower() == "yes":
-                expanded_response = True
-                last_user_prompt = session_data[-3]["text"] if len(session_data) >= 3 and session_data[-3]["role"] == "user" else prompt
-
         # Load base prompt
         with open("prompts/base_prompt.txt", "r") as f:
             base_prompt = f.read()
@@ -307,12 +237,9 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         # Construct conversation history
         history = " ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])
 
-        # Construct prompt with formatting instructions for all responses
+        # Construct prompt with formatting instructions
         formatting_instruction = "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points."
-        if expanded_response:
-            prompt = f"{base_prompt}\n\nThe user previously asked: \"{last_user_prompt}\". They have responded \"yes\" to request more information.\nProvide a detailed response with specific IPC sections, relevant Indian Acts, and case law examples (e.g., case names, court, year) related to the topic. Include source websites or URLs. {formatting_instruction}\n\nConversation History:\n{history}\n\nUser: yes\nAssistant:"
-        else:
-            prompt = f"{base_prompt}\n\n{formatting_instruction}\n\nConversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
+        prompt = f"{base_prompt}\n\n{formatting_instruction}\n\nConversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
 
         if file_content:
             prompt = f"File content:\n{file_content}\n\n{prompt}"
