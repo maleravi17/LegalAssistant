@@ -14,7 +14,6 @@ import time
 import shutil
 import logging
 import tempfile
-import random
 import urllib.parse
 from difflib import SequenceMatcher
 
@@ -141,9 +140,9 @@ async def generate_follow_up_question(prompt: str, response: str, recent_follow_
     """Generate a contextually relevant follow-up question using the Gemini model."""
     follow_up_prompt = (
         "You are a legal assistant specializing in Indian law. Based on the following conversation history, user prompt, and response, "
-        "generate a single, concise, and contextually relevant follow-up question to encourage deeper exploration of the topic. "
+        "generate a single, concise follow-up question to encourage deeper exploration of the topic. "
         "The question should be specific to the legal context (e.g., IPC sections, Indian Acts, case laws), avoid repetition with recent questions, "
-        "and not use phrases like 'Would you like' or 'Do you need'. Ensure the question is clear, relevant, and ends with a question mark.\n\n"
+        "and use direct phrasing (e.g., 'What defenses are available?' instead of 'Would you like'). Ensure the question is clear, relevant, and ends with a question mark.\n\n"
         f"Conversation History:\n{history_text}\n\n"
         f"User Prompt: {prompt}\n\n"
         f"Response: {response}\n\n"
@@ -170,7 +169,7 @@ async def generate_follow_up_question(prompt: str, response: str, recent_follow_
         logger.error(f"Error generating follow-up question: {str(e)}")
         return "What specific aspect of this legal topic would you like to explore further?"
 
-def format_response(text, prompt: str, session_data: dict, history_text: str):
+async def format_response(text, prompt: str, session_data: dict, history_text: str):
     """Format the response with paragraphs, bullet points, proper hyperlinks, and a contextually relevant follow-up."""
     # Preprocess sources to standardize format
     source_map = {
@@ -184,19 +183,28 @@ def format_response(text, prompt: str, session_data: dict, history_text: str):
     def standardize_sources(text):
         lines = text.split('\n')
         formatted_lines = []
+        valid_url_pattern = r'https?://[^\s<>"]+/?'
         for line in lines:
             line = line.strip()
             if line.startswith("Source:"):
                 source_text = line.replace("Source:", "").strip()
-                source_text = source_text.replace("[", "").replace("]", "")  # Clean malformed brackets
-                if source_text in source_map:
+                source_text = source_text.replace("[", "").replace("]", "")  # Clean brackets
+                # Extract the first valid URL if present
+                url_match = re.search(valid_url_pattern, source_text)
+                if url_match:
+                    url = url_match.group(0).rstrip('/')
+                    source_text = re.sub(valid_url_pattern, '', source_text).strip()
+                    if source_text in source_map or any(domain in url for domain in source_map.values()):
+                        line = f"Source: <a href=\"{url}\" target=\"_blank\">{source_text or 'Indian Kanoon'}</a>"
+                    else:
+                        logger.warning(f"Skipped source with unrecognized URL: {source_text} ({url})")
+                        line = ""
+                elif source_text in source_map:
                     if source_map[source_text]:
                         line = f"Source: <a href=\"{source_map[source_text]}\" target=\"_blank\">{source_text}</a>"
                     else:
                         logger.warning(f"Skipped source without URL: {source_text}")
                         line = ""
-                elif re.match(r'https?://[^\s<>]+', source_text):
-                    line = f"Source: <a href=\"{source_text}\" target=\"_blank\">{source_text}</a>"
                 else:
                     logger.warning(f"Skipped invalid source: {source_text}")
                     line = ""
@@ -235,13 +243,13 @@ def format_response(text, prompt: str, session_data: dict, history_text: str):
 
     # Format hyperlinks with descriptive text
     def format_url(match):
-        url = match.group(0)
+        url = match.group(0).rstrip('/')
         try:
             parsed_url = urllib.parse.urlparse(url)
             if not parsed_url.scheme or not parsed_url.netloc:
                 logger.warning(f"Skipped invalid URL: {url}")
                 return url
-            display_text = f"{parsed_url.scheme}://{parsed_url.netloc}"
+            display_text = parsed_url.netloc
             if "indiacode.nic.in" in url:
                 display_text = "India Code"
             elif "indiankanoon.org" in url:
@@ -256,11 +264,11 @@ def format_response(text, prompt: str, session_data: dict, history_text: str):
             logger.warning(f"Failed to parse URL {url}: {str(e)}")
             return url
 
-    final_text = re.sub(r'(https?://[^\s<>]+|www\.[^\s<>]+)', format_url, final_text)
+    final_text = re.sub(r'https?://[^\s<>"]+/?', format_url, final_text)
 
     # Generate a contextually relevant follow-up question
     recent_follow_ups = session_data.get("recent_follow_ups", [])
-    follow_up = asyncio.run(generate_follow_up_question(prompt, final_text, recent_follow_ups, history_text))
+    follow_up = await generate_follow_up_question(prompt, final_text, recent_follow_ups, history_text)
     recent_follow_ups.append(follow_up)
     session_data["recent_follow_ups"] = recent_follow_ups[-5:]  # Keep last 5 for context
     final_text = f"{final_text}\n\n**Follow-Up Question:** {follow_up}"
@@ -356,7 +364,7 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         formatting_instruction = (
             "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points. "
             "Include source URLs for all legal references in the format 'Source: <URL>' using domains like indiankanoon.org, indiacode.nic.in, or legislative.gov.in. "
-            "Do not include any follow-up questions, suggestions for further inquiries, or phrases like 'Would you like' in the response."
+            "Ensure URLs are valid and accessible. Do not include any follow-up questions, suggestions for further inquiries, or phrases like 'Would you like' in the response."
         )
         if expanded_response:
             prompt = (
@@ -384,23 +392,24 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
 
         try:
             response = await retry_request(generate_content)
-            assistant_response, session_data = format_response(response.text, prompt, session_data, history_text)
+            assistant_response, session_data = await format_response(response.text, prompt, session_data, history_text)
             history.append({"role": "assistant", "text": assistant_response})
             session_data["history"] = history
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
-        except genai.QuotaExceededError:
-            try:
-                model = rotate_key()
-                response = await retry_request(generate_content)
-                assistant_response, session_data = format_response(response.text, prompt, session_data, history_text)
-                history.append({"role": "assistant", "text": assistant_response})
-                session_data["history"] = history
-                save_session(session_id, session_data)
-                return ChatResponse(response=assistant_response)
-            except genai.QuotaExceededError:
-                raise HTTPException(status_code=429, detail="Quota exceeded for all API keys. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
         except Exception as e:
+            if "quota exceeded" in str(e).lower() or "429" in str(e).lower():
+                try:
+                    model = rotate_key()
+                    response = await retry_request(generate_content)
+                    assistant_response, session_data = await format_response(response.text, prompt, session_data, history_text)
+                    history.append({"role": "assistant", "text": assistant_response})
+                    session_data["history"] = history
+                    save_session(session_id, session_data)
+                    return ChatResponse(response=assistant_response)
+                except Exception as quota_error:
+                    logger.error(f"Quota exceeded for all API keys: {str(quota_error)}")
+                    raise HTTPException(status_code=429, detail="Quota exceeded for all API keys. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
             logger.error(f"Error generating content: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error generating content: {str(e)}")
 
