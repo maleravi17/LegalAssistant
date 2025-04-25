@@ -25,6 +25,7 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
+            gap: 10px;
         }
         #chat-container {
             border-radius: 12px;
@@ -43,6 +44,78 @@
         }
         #chat-container.light {
             background-color: white;
+        }
+        #resources-container {
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            padding: 10px;
+            transition: background-color 0.3s;
+            width: 100%;
+            max-width: 100%;
+        }
+        #resources-container.dark {
+            background-color: #2b2b2b;
+        }
+        #resources-container.light {
+            background-color: white;
+        }
+        #resources-section {
+            margin: 0;
+            padding: 5px;
+            border-radius: 8px;
+            transition: background-color 0.3s;
+        }
+        #resources-section.dark {
+            background-color: #333333;
+        }
+        #resources-section.light {
+            background-color: #f9f9f9;
+        }
+        #resources-section h2 {
+            font-size: 14px;
+            margin-bottom: 5px;
+            transition: color 0.3s;
+        }
+        #resources-section h2.dark {
+            color: #ffffff;
+        }
+        #resources-section h2.light {
+            color: #2c3e50;
+        }
+        #resources-list {
+            list-style: none;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        #resources-list li {
+            flex: none;
+        }
+        #resources-list a {
+            display: block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            text-decoration: none;
+            text-align: left;
+            font-size: 12px;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        #resources-list a.dark {
+            background-color: #424242;
+            color: #1e88e5;
+        }
+        #resources-list a.light {
+            background-color: #ecf0f1;
+            color: #3498db;
+        }
+        #resources-list a:hover.dark {
+            background-color: #555555;
+            color: #4fc3f7;
+        }
+        #resources-list a:hover.light {
+            background-color: #d1d5db;
+            color: #0277bd;
         }
         #chat-header {
             font-size: 24px;
@@ -289,7 +362,7 @@
             background-color: #2980b9;
         }
         .upload-btn {
-            right: 40px;
+            right: 40px !important;
             padding: 6px;
             width: 28px;
             height: 28px;
@@ -359,8 +432,11 @@
             padding: 15px;
             display: none;
             width: 100%;
-            margin-top: 10px;
+            max-width: 250px;
             transition: background-color 0.3s;
+            position: absolute;
+            right: 0;
+            top: 0;
         }
         #sidebar.dark {
             background-color: #2b2b2b;
@@ -369,11 +445,7 @@
             background-color: white;
         }
         #sidebar.open {
-            position: fixed;
-            top: 0;
-            left: 0;
-            height: 100%;
-            z-index: 10;
+            display: block;
         }
         #sidebar h2 {
             font-size: 18px;
@@ -419,55 +491,31 @@
         #history-list li:hover.light {
             background-color: #e0e0e0;
         }
-        #resources-section {
-            margin-top: 20px;
-        }
-        #resources-list {
-            list-style: none;
-            padding: 0;
-        }
-        #resources-list li {
-            margin: 5px 0;
-        }
-        #resources-list a {
-            display: block;
-            padding: 8px;
-            border-radius: 6px;
-            text-decoration: none;
-            transition: background-color 0.3s, color 0.3s;
-        }
-        #resources-list a.dark {
-            background-color: #333333;
-            color: #1e88e5;
-        }
-        #resources-list a.light {
-            background-color: #f9f9f9;
-            color: #3498db;
-        }
-        #resources-list a:hover.dark {
-            background-color: #424242;
-            color: #4fc3f7;
-        }
-        #resources-list a:hover.light {
-            background-color: #e0e0e0;
-            color: #0277bd;
-        }
-
         @media (min-width: 768px) {
             #container {
                 flex-direction: row;
+                flex-wrap: wrap;
                 gap: 20px;
             }
             #chat-container {
                 flex: 2;
                 padding: 15px;
+                min-width: 0;
+            }
+            #resources-container {
+                flex: 0 0 180px;
+                max-width: 180px;
+                margin-top: 0;
+                height: fit-content;
             }
             #sidebar {
-                flex: 1;
+                flex: 0 0 250px;
+                max-width: 250px;
                 margin-top: 0;
                 position: static;
                 height: auto;
                 max-height: none;
+                display: none;
             }
             #chat-header {
                 font-size: 28px;
@@ -478,6 +526,17 @@
             #controls {
                 top: 15px;
                 right: 15px;
+            }
+            #resources-list {
+                flex-direction: column;
+            }
+            #resources-list li {
+                min-width: auto;
+            }
+            #sidebar.open {
+                display: block;
+                position: absolute;
+                right: 0;
             }
         }
     </style>
@@ -508,11 +567,8 @@
                 <button type="submit" class="send-btn dark">↑</button>
             </form>
         </div>
-        <div id="sidebar" class="dark">
-            <h2 class="dark">Chat History</h2>
-            <button id="close-sidebar" class="dark">Close</button>
-            <ul id="history-list"></ul>
-            <div id="resources-section">
+        <div id="resources-container" class="dark">
+            <div id="resources-section" class="dark">
                 <h2 class="dark">Legal Resources</h2>
                 <ul id="resources-list">
                     <li><a href="https://lawchakra.in/" target="_blank" class="dark">LawChakra</a></li>
@@ -524,6 +580,11 @@
                     <li><a href="https://theleaflet.in/" target="_blank" class="dark">The Leaflet</a></li>
                 </ul>
             </div>
+        </div>
+        <div id="sidebar" class="dark">
+            <h2 class="dark">Chat History</h2>
+            <button id="close-sidebar" class="dark">Close</button>
+            <ul id="history-list"></ul>
         </div>
     </div>
 
@@ -540,6 +601,8 @@
         const historyList = document.getElementById('history-list');
         const chatContainer = document.getElementById('chat-container');
         const chatHeader = document.getElementById('chat-header');
+        const resourcesContainer = document.getElementById('resources-container');
+        const resourcesSection = document.getElementById('resources-section');
 
         let sessionId = localStorage.getItem('sessionId') || 'pla_' + Math.random().toString(36).substr(2, 9);
         localStorage.setItem('sessionId', sessionId);
@@ -579,7 +642,6 @@
             localStorage.setItem('sessionId', sessionId);
             chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
             updateHistory();
-            sidebar.classList.remove('open');
             sidebar.style.display = 'none';
         });
 
@@ -588,13 +650,11 @@
         });
 
         closeSidebarBtn.addEventListener('click', () => {
-            sidebar.classList.remove('open');
             sidebar.style.display = 'none';
         });
 
         sidebar.addEventListener('click', (e) => {
             if (e.target === sidebar) {
-                sidebar.classList.remove('open');
                 sidebar.style.display = 'none';
             }
         });
@@ -769,7 +829,6 @@
                     sessionId = id;
                     localStorage.setItem('sessionId', id);
                     chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
-                    sidebar.classList.remove('open');
                     sidebar.style.display = 'none';
                 });
                 historyList.appendChild(li);
@@ -779,9 +838,7 @@
         function toggleSidebar() {
             if (sidebar.style.display === 'none') {
                 sidebar.style.display = 'block';
-                sidebar.classList.add('open');
             } else {
-                sidebar.classList.remove('open');
                 sidebar.style.display = 'none';
             }
         }
@@ -824,6 +881,12 @@
                 li.classList.toggle('dark', isDarkTheme);
                 li.classList.toggle('light', !isDarkTheme);
             });
+            resourcesContainer.classList.toggle('dark', isDarkTheme);
+            resourcesContainer.classList.toggle('light', !isDarkTheme);
+            resourcesSection.classList.toggle('dark', isDarkTheme);
+            resourcesSection.classList.toggle('light', !isDarkTheme);
+            resourcesSection.querySelector('h2').classList.toggle('dark', isDarkTheme);
+            resourcesSection.querySelector('h2').classList.toggle('light', !isDarkTheme);
             document.querySelectorAll('#resources-list a').forEach(link => {
                 link.classList.toggle('dark', isDarkTheme);
                 link.classList.toggle('light', !isDarkTheme);
