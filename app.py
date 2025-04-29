@@ -134,6 +134,16 @@ def is_greeting(prompt: str) -> bool:
     prompt_lower = prompt.lower().strip()
     return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
 
+def is_substantive_legal_response(response: str) -> bool:
+    """Check if the response contains substantive legal content."""
+    legal_keywords = [
+        "ipc", "section", "act", "judgment", "court", "lawyer", "advocate", "procedure",
+        "legal", "law", "case", "citation", "offense", "penalty", "plaint", "summons",
+        "evidence", "trial", "appeal", "passport", "civil", "criminal", "dispute"
+    ]
+    response_lower = response.lower()
+    return any(keyword in response_cc_lower for keyword in legal_keywords)
+
 def format_response(text, prompt: str):
     """Format the response with paragraphs, bullet points, and proper hyperlinks."""
     # Split text into paragraphs
@@ -252,6 +262,10 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         try:
             response = await retry_request(generate_content)
             assistant_response = format_response(response.text, prompt)
+            # Append disclaimer for substantive legal responses
+            if is_substantive_legal_response(assistant_response):
+                disclaimer = "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
+                assistant_response = f"{assistant_response}\n\n{disclaimer}"
             session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
@@ -260,6 +274,10 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
                 model = rotate_key()
                 response = await retry_request(generate_content)
                 assistant_response = format_response(response.text, prompt)
+                # Append disclaimer for substantive legal responses
+                if is_substantive_legal_response(assistant_response):
+                    disclaimer = "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
+                    assistant_response = f"{assistant_response}\n\n{disclaimer}"
                 session_data.append({"role": "assistant", "text": assistant_response})
                 save_session(session_id, session_data)
                 return ChatResponse(response=assistant_response)
