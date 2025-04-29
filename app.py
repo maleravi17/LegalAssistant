@@ -5,6 +5,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import google.generativeai as genai
+from google.api_core.exceptions import ResourceExhausted
 from dotenv import load_dotenv
 import PyPDF2
 import json
@@ -142,7 +143,7 @@ def is_substantive_legal_response(response: str) -> bool:
         "evidence", "trial", "appeal", "passport", "civil", "criminal", "dispute"
     ]
     response_lower = response.lower()
-    return any(keyword in response_cc_lower for keyword in legal_keywords)
+    return any(keyword in response_lower for keyword in legal_keywords)
 
 def format_response(text, prompt: str):
     """Format the response with paragraphs, bullet points, and proper hyperlinks."""
@@ -269,7 +270,7 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
             session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
-        except genai.QuotaExceededError:
+        except ResourceExhausted:
             try:
                 model = rotate_key()
                 response = await retry_request(generate_content)
@@ -281,7 +282,7 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
                 session_data.append({"role": "assistant", "text": assistant_response})
                 save_session(session_id, session_data)
                 return ChatResponse(response=assistant_response)
-            except genai.QuotaExceededError:
+            except ResourceExhausted:
                 raise HTTPException(status_code=429, detail="Quota exceeded for all API keys. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
         except Exception as e:
             logger.error(f"Error generating content: {str(e)}")
