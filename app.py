@@ -5,7 +5,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import google.generativeai as genai
-from google.api_core.exceptions import ResourceExhausted
 from dotenv import load_dotenv
 import PyPDF2
 import json
@@ -135,16 +134,6 @@ def is_greeting(prompt: str) -> bool:
     prompt_lower = prompt.lower().strip()
     return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
 
-def is_substantive_legal_response(response: str) -> bool:
-    """Check if the response contains substantive legal content."""
-    legal_keywords = [
-        "ipc", "section", "act", "judgment", "court", "lawyer", "advocate", "procedure",
-        "legal", "law", "case", "citation", "offense", "penalty", "plaint", "summons",
-        "evidence", "trial", "appeal", "passport", "civil", "criminal", "dispute"
-    ]
-    response_lower = response.lower()
-    return any(keyword in response_lower for keyword in legal_keywords)
-
 def format_response(text, prompt: str):
     """Format the response with paragraphs, bullet points, and proper hyperlinks."""
     # Split text into paragraphs
@@ -263,26 +252,18 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         try:
             response = await retry_request(generate_content)
             assistant_response = format_response(response.text, prompt)
-            # Append disclaimer for substantive legal responses
-            if is_substantive_legal_response(assistant_response):
-                disclaimer = "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
-                assistant_response = f"{assistant_response}\n\n{disclaimer}"
             session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
-        except ResourceExhausted:
+        except genai.QuotaExceededError:
             try:
                 model = rotate_key()
                 response = await retry_request(generate_content)
                 assistant_response = format_response(response.text, prompt)
-                # Append disclaimer for substantive legal responses
-                if is_substantive_legal_response(assistant_response):
-                    disclaimer = "Disclaimer: This information is for educational purposes only and should not be considered legal advice. It is essential to consult with a legal professional for specific guidance regarding your situation."
-                    assistant_response = f"{assistant_response}\n\n{disclaimer}"
                 session_data.append({"role": "assistant", "text": assistant_response})
                 save_session(session_id, session_data)
                 return ChatResponse(response=assistant_response)
-            except ResourceExhausted:
+            except genai.QuotaExceededError:
                 raise HTTPException(status_code=429, detail="Quota exceeded for all API keys. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
         except Exception as e:
             logger.error(f"Error generating content: {str(e)}")
