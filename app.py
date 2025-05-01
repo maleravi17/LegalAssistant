@@ -158,38 +158,49 @@ def is_law_related(prompt: str, session_data: list) -> bool:
         return any(keyword in last_user_query or keyword in last_assistant_response for keyword in law_keywords)
     return False
 
-def format_response(text, prompt: str, is_law_related: bool = False):
-    """Format the response with paragraphs, bullet points, and proper hyperlinks."""
+def format_response(text: str, prompt: str, is_law_related: bool = False) -> str:
+    """Format the response with enforced paragraphs, bullet points, and proper hyperlinks."""
     # Remove unwanted prompts or disclaimers from the raw response
-    text = re.sub(r"Would you like more information\?|\b[Pp]lease\s+let\s+me\s+know\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"Would you like more information\?|\b[Pp]lease\s+let\s+me\s+know\b|\b[Dd]o you have any further questions\b", "", text, flags=re.IGNORECASE)
     text = re.sub(r"Disclaimer:.*?(?=\n|$)", "", text, flags=re.IGNORECASE)
     
-    # Split text into paragraphs
-    paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
+    # Enforce paragraph breaks by splitting on double newlines or single newlines
+    paragraphs = re.split(r'\n\s*\n|\n', text)
     formatted = []
-    for para in paragraphs:
-        para = para.strip()
-        if not para:
+    current_para = []
+    for line in paragraphs:
+        line = line.strip()
+        if not line:
+            if current_para:
+                formatted.append(" ".join(current_para))
+                current_para = []
             continue
-        if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
-            lines = para.split('\n')
-            formatted_para = []
-            for line in lines:
-                line = line.strip()
-                if line.startswith('* ') or line.startswith('- '):
-                    formatted_para.append(f"• {line[2:]}")
-                elif line.startswith('**') and line.endswith('**'):
-                    formatted_para.append(f"\n**{line[2:-2]}**\n")
-                else:
-                    formatted_para.append(line)
-            formatted.append('\n'.join(formatted_para))
+        # Handle bullet points or bold text
+        if line.startswith('* ') or line.startswith('- '):
+            if current_para:
+                formatted.append(" ".join(current_para))
+                current_para = []
+            formatted.append(f"• {line[2:]}")
+        elif line.startswith('**') and line.endswith('**'):
+            if current_para:
+                formatted.append(" ".join(current_para))
+                current_para = []
+            formatted.append(f"\n**{line[2:-2]}**\n")
         else:
-            formatted.append(para)
-    
-    final_text = '\n\n'.join(formatted)
-    # Format hyperlinks (ensure no trailing punctuation)
-    final_text = re.sub(r'(https?://[^\s<>]+)(?<![\.,;])', r'<a href="\1" target="_blank">\1</a>', final_text)
-    
+            current_para.append(line)
+    if current_para:
+        formatted.append(" ".join(current_para))
+
+    # Join paragraphs with double newlines
+    final_text = "\n\n".join(p for p in formatted if p)
+
+    # Format hyperlinks (handle trailing text and ensure clean URLs)
+    final_text = re.sub(
+        r'(https?://[^\s<>]+)([\w\s\.,;!?]*$)',
+        r'<a href="\1" target="_blank">\1</a>',
+        final_text
+    )
+
     # Append disclaimer only for law-related responses
     if is_law_related:
         final_text += (
