@@ -1,4 +1,3 @@
-
 import os
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -135,88 +134,34 @@ def is_greeting(prompt: str) -> bool:
     prompt_lower = prompt.lower().strip()
     return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
 
-def is_follow_up(prompt: str) -> bool:
-    """Check if the input is a follow-up request."""
-    follow_up_phrases = ["yes", "more", "tell me more", "continue", "go on", "expand", "details", "elaborate", "further"]
-    prompt_lower = prompt.lower().strip()
-    return any(phrase == prompt_lower or phrase in prompt_lower for phrase in follow_up_phrases) and len(prompt_lower.split()) <= 4
-
-def is_law_related(prompt: str, session_data: list) -> bool:
-    """Check if the prompt or recent session context is law-related."""
-    law_keywords = [
-        "ipc", "section", "act", "law", "legal", "court", "case", "judgment", "rights", "government",
-        "procedure", "passport", "crime", "criminal", "civil", "constitution", "statute", "legislation"
-    ]
-    prompt_lower = prompt.lower().strip()
-    # Check if prompt contains law-related keywords
-    if any(keyword in prompt_lower for keyword in law_keywords):
-        return True
-    # For follow-up prompts, check the last user query or assistant response
-    if is_follow_up(prompt):
-        last_user_query = next((msg['text'].lower() for msg in reversed(session_data[:-1]) if msg['role'] == 'user'), "")
-        last_assistant_response = next((msg['text'].lower() for msg in reversed(session_data[:-1]) if msg['role'] == 'assistant'), "")
-        return any(keyword in last_user_query or keyword in last_assistant_response for keyword in law_keywords)
-    return False
-
-def format_response(text: str, prompt: str, is_law_related: bool = False) -> str:
-    """Format the response with enforced paragraphs, bullet points, and proper hyperlinks."""
-    # Remove unwanted prompts or disclaimers from the raw response
-    text = re.sub(r"Would you like more information\?|\b[Pp]lease\s+let\s+me\s+know\b|\b[Dd]o you have any further questions\b", "", text, flags=re.IGNORECASE)
-    text = re.sub(r"Disclaimer:.*?(?=\n|$)", "", text, flags=re.IGNORECASE)
-    
-    # Enforce paragraph breaks by splitting on double newlines or single newlines
-    paragraphs = re.split(r'\n\s*\n|\n', text)
+def format_response(text, prompt: str):
+    """Format the response with paragraphs, bullet points, and proper hyperlinks."""
+    # Split text into paragraphs
+    paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
-    current_para = []
-    for line in paragraphs:
-        line = line.strip()
-        if not line:
-            if current_para:
-                formatted.append(" ".join(current_para))
-                current_para = []
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
             continue
-        # Handle bullet points or bold text
-        if line.startswith('* ') or line.startswith('- '):
-            if current_para:
-                formatted.append(" ".join(current_para))
-                current_para = []
-            formatted.append(f"• {line[2:]}")
-        elif line.startswith('**') and line.endswith('**'):
-            if current_para:
-                formatted.append(" ".join(current_para))
-                current_para = []
-            formatted.append(f"\n**{line[2:-2]}**\n")
+        if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
+            lines = para.split('\n')
+            formatted_para = []
+            for line in lines:
+                line = line.strip()
+                if line.startswith('* ') or line.startswith('- '):
+                    formatted_para.append(f"• {line[2:]}")
+                elif line.startswith('**') and line.endswith('**'):
+                    formatted_para.append(f"\n**{line[2:-2]}**\n")
+                else:
+                    formatted_para.append(line)
+            formatted.append('\n'.join(formatted_para))
         else:
-            current_para.append(line)
-    if current_para:
-        formatted.append(" ".join(current_para))
-
-    # Join paragraphs with double newlines
-    final_text = "\n\n".join(p for p in formatted if p)
-
-    # Format hyperlinks (handle trailing text and ensure clean URLs)
-    final_text = re.sub(
-        r'(https?://[^\s<>]+)([\w\s\.,;!?]*$)',
-        r'<a href="\1" target="_blank">\1</a>',
-        final_text
-    )
-
-    # Append disclaimer only for law-related responses
-    if is_law_related:
-        final_text += (
-            "\n\nDisclaimer: This information is for educational purposes only and should not be considered legal advice. "
-            "It is essential to consult with a legal professional for specific guidance regarding your situation."
-        )
+            formatted.append(para)
     
-    return final_text.strip()
-
-def truncate_history(history: str, max_length: int = 6000) -> str:
-    """Truncate history to fit within token limits while preserving recent messages."""
-    if len(history) <= max_length:
-        return history
-    # Keep the last 80% of characters, prioritizing recent messages
-    start_index = int(len(history) * 0.2)
-    return history[start_index:]
+    final_text = '\n\n'.join(formatted)
+    # Format hyperlinks
+    final_text = re.sub(r'(https?://[^\s<>]+|www\.[^\s<>]+)', r'<a href="\1" target="_blank">\1</a>', final_text)
+    return final_text
 
 # Initialize Gemini model
 model = initialize_gemini()
@@ -271,22 +216,16 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         # Check for initial welcome message
         session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
         if not os.path.exists(session_file) and not prompt.strip():
-            assistant_response = (
-                "Hello! I'm Lexi, your legal assistant specializing in Indian law, IPC sections, and related topics. "
-                "Ask me anything about legal rights, government procedures, or specific laws, and I'll provide detailed answers with sources."
-            )
+            assistant_response = "Okay, I'm ready to assist you with your legal questions related to Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and other relevant topics. I can also help determine legal rights and official government procedures within my area of expertise. Please ask your question."
             return ChatResponse(response=assistant_response)
 
         # Handle greetings
         if is_greeting(prompt):
-            assistant_response = "Hi there! I'm Lexi, ready to assist with your legal questions about Indian law. What's on your mind?"
+            assistant_response = "Hello! I'm Lexi, your legal assistant for Indian law. How can I help you today?"
             session_data.append({"role": "user", "text": prompt})
             session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
-
-        # Check if the prompt is law-related
-        is_law_query = is_law_related(prompt, session_data)
 
         # Append user input to session history
         session_data.append({"role": "user", "text": prompt})
@@ -295,56 +234,24 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         with open("prompts/base_prompt.txt", "r") as f:
             base_prompt = f.read()
 
-        # Construct conversation history (full session history)
-        history = "\n".join([f"{msg['role'].capitalize()}: {msg['text']}" for msg in session_data])
-        # Truncate history if too long to avoid token limits
-        history = truncate_history(history, max_length=6000)
-
-        # Handle follow-up questions
-        if is_follow_up(prompt):
-            # Get the last user query and assistant response
-            last_user_query = next((msg['text'] for msg in reversed(session_data[:-1]) if msg['role'] == 'user'), "")
-            last_assistant_response = next((msg['text'] for msg in reversed(session_data[:-1]) if msg['role'] == 'assistant'), "")
-            prompt_instruction = (
-                f"The user has requested further information with the input '{prompt}'. "
-                f"Refer to the last user query: '{last_user_query}' and the assistant's response: '{last_assistant_response}'. "
-                "Use the full conversation history to provide a detailed, context-aware follow-up response that expands on the previous legal topic. "
-                f"{'Include specific IPC sections, Indian Acts, or case law with source URLs (e.g., https://www.indiankanoon.org, https://lddashboard.legislative.gov.in) if the query is law-related.' if is_law_query else 'Provide a relevant response, politely declining if the query is not law-related.'} "
-                "Use a conversational tone, avoid asking 'Would you like more information?' or similar prompts, and do not include a disclaimer."
-            )
-        else:
-            prompt_instruction = (
-                "Provide a detailed, accurate response to the user's query, focusing on Indian law if the query is law-related. "
-                "Use the full conversation history to ensure context-aware answers. "
-                f"{'Include specific IPC sections, Indian Acts, or case law with source URLs (e.g., https://www.indiankanoon.org, https://lddashboard.legislative.gov.in) for law-related queries.' if is_law_query else 'Politely decline to answer if the query is not law-related, explaining that you specialize in Indian law.'} "
-                "Use a conversational tone and avoid asking 'Would you like more information?' or similar prompts."
-            )
+        # Construct conversation history
+        history = " ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])
 
         # Construct prompt with formatting instructions
-        formatting_instruction = (
-            "Format the response with clear paragraphs separated by double newlines. "
-            "Use bullet points (e.g., '* ') for lists or key points. "
-            "Ensure hyperlinks are plain URLs (e.g., https://www.example.com) without trailing punctuation."
-        )
-        final_prompt = (
-            f"{base_prompt}\n\n"
-            f"{formatting_instruction}\n\n"
-            f"{prompt_instruction}\n\n"
-            f"Conversation History:\n{history}\n\n"
-            f"User: {prompt}\nAssistant:"
-        )
+        formatting_instruction = "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points."
+        prompt = f"{base_prompt}\n\n{formatting_instruction}\n\nConversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
 
         if file_content:
-            final_prompt = f"File content:\n{file_content}\n\n{final_prompt}"
+            prompt = f"File content:\n{file_content}\n\n{prompt}"
 
         # Generate response
         async def generate_content():
-            response = model.generate_content(final_prompt)
+            response = model.generate_content(prompt)
             return response
 
         try:
             response = await retry_request(generate_content)
-            assistant_response = format_response(response.text, prompt, is_law_related=is_law_query)
+            assistant_response = format_response(response.text, prompt)
             session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
@@ -352,7 +259,7 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
             try:
                 model = rotate_key()
                 response = await retry_request(generate_content)
-                assistant_response = format_response(response.text, prompt, is_law_related=is_law_query)
+                assistant_response = format_response(response.text, prompt)
                 session_data.append({"role": "assistant", "text": assistant_response})
                 save_session(session_id, session_data)
                 return ChatResponse(response=assistant_response)
@@ -371,6 +278,7 @@ async def regenerate_response(request: ChatRequest):
     """Regenerate a response for the given prompt."""
     if not request.prompt:
         raise HTTPException(status_code=400, detail="Prompt is required for regeneration.")
+    # Call the chat endpoint with regenerate=True
     return await chat_with_law_assistant(session_id=request.session_id, prompt=request.prompt)
 
 if __name__ == "__main__":
