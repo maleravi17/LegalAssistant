@@ -462,6 +462,14 @@
             float: right;
             padding: 5px 10px;
             font-size: 14px;
+            background-color: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        #close-sidebar:hover {
+            background-color: #ff6666;
         }
         #history-list {
             list-style: none;
@@ -470,26 +478,25 @@
             overflow-y: auto;
             margin-bottom: 20px;
         }
-        #history-list li {
-            padding: 8px;
+        .history-item {
+            padding: 10px;
             margin: 5px 0;
             border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.3s, color 0.3s;
-        }
-        #history-list li.dark {
             background-color: #333333;
             color: #e0e0e0;
+            cursor: pointer;
+            transition: background-color 0.3s;
         }
-        #history-list li.light {
-            background-color: #f9f9f9;
-            color: #2c3e50;
-        }
-        #history-list li:hover.dark {
+        .history-item:hover {
             background-color: #424242;
         }
-        #history-list li:hover.light {
-            background-color: #e0e0e0;
+        .history-item .title {
+            font-weight: 500;
+            font-size: 14px;
+        }
+        .history-item .timestamp {
+            font-size: 12px;
+            color: #999;
         }
         @media (min-width: 768px) {
             #container {
@@ -647,6 +654,9 @@
 
         historyToggleBtn.addEventListener('click', () => {
             toggleSidebar();
+            if (sidebar.style.display !== 'none') {
+                updateHistory();
+            }
         });
 
         closeSidebarBtn.addEventListener('click', () => {
@@ -783,9 +793,7 @@
 
             let formattedText = text;
 
-            // If the text already contains <a> tags (formatted by the server), avoid reprocessing hyperlinks
             if (!/<a\s+href=["'](https?:\/\/)[^\s<>]+["'][^>]*>.*<\/a>/.test(text)) {
-                // Apply minimal formatting for paragraphs and lists if no hyperlinks are present
                 formattedText = text
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>')
@@ -796,13 +804,11 @@
                     formattedText = formattedText.replace(/(<li>.+<\/li>)/g, '<ul>$1</ul>');
                 }
             } else {
-                // If the text contains hyperlinks, only apply paragraph and list formatting carefully
                 formattedText = text
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>')
                     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
-                // Convert bullet points to <ul><li> without breaking existing HTML
                 if (formattedText.includes('• ')) {
                     const paragraphs = formattedText.split('</p><p>');
                     formattedText = paragraphs.map(para => {
@@ -823,7 +829,6 @@
                 }
             }
 
-            // Ensure the text is wrapped in a paragraph if it doesn't already have HTML structure
             if (!formattedText.startsWith('<p>') && !formattedText.startsWith('<ul>')) {
                 formattedText = `<p>${formattedText}</p>`;
             }
@@ -845,7 +850,7 @@
             return messageDiv;
         }
 
-        function updateHistory() {
+        async function updateHistory() {
             historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
             if (!historySessions.includes(sessionId)) {
                 historySessions.push(sessionId);
@@ -856,19 +861,37 @@
                 const li = document.createElement('li');
                 li.textContent = "No history available";
                 historyList.appendChild(li);
+                return;
             }
-            historySessions.forEach(id => {
+            for (const id of historySessions) {
+                const response = await fetch(`/memory/${id}`);
+                const data = await response.json();
+                const firstUserMessage = data.messages.find(msg => msg.role === 'user');
+                const title = firstUserMessage ? firstUserMessage.text.slice(0, 30) + (firstUserMessage.text.length > 30 ? '...' : '') : `Session ${id.slice(4, 10)}`;
+                const timestamp = firstUserMessage ? new Date(firstUserMessage.timestamp).toLocaleString() : 'Unknown';
+
                 const li = document.createElement('li');
-                li.classList.add(isDarkTheme ? 'dark' : 'light');
-                li.textContent = `Session ${id.slice(4, 10)}`;
-                li.addEventListener('click', () => {
-                    sessionId = id;
-                    localStorage.setItem('sessionId', id);
-                    chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
-                    sidebar.style.display = 'none';
-                });
+                li.classList.add('history-item');
+                li.innerHTML = `
+                    <div class="title">${title}</div>
+                    <div class="timestamp">${timestamp}</div>
+                `;
+                li.addEventListener('click', () => loadSession(id));
                 historyList.appendChild(li);
+            }
+        }
+
+        async function loadSession(id) {
+            sessionId = id;
+            localStorage.setItem('sessionId', id);
+            const response = await fetch(`/memory/${id}`);
+            const data = await response.json();
+            chatDisplay.innerHTML = '';
+            data.messages.forEach(msg => {
+                const isBotWithActions = msg.role === 'assistant' && msg.message_id !== 'initial';
+                addMessage(msg.role, msg.text, isBotWithActions);
             });
+            sidebar.style.display = 'none';
         }
 
         function toggleSidebar() {
@@ -929,6 +952,9 @@
             });
             themeToggle.checked = !isDarkTheme;
         }
+
+        // Initial load
+        updateHistory();
     </script>
 </body>
 </html>
