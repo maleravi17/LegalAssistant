@@ -135,20 +135,14 @@ def is_greeting(prompt: str) -> bool:
     return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
 
 def format_response(text, prompt: str):
-    """Format the response with paragraphs, bullet points, and properly formatted hyperlinks."""
-    # First, split text into paragraphs
+    """Format the response with paragraphs and bullet points, without hyperlinks."""
+    # Split text into paragraphs
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
-
-    # Regex to match URLs, excluding square brackets
-    url_pattern = r'(?<![\w-])(https?:\/\/[^\s<>\]\)]+)(?![\w-])'
-
     for para in paragraphs:
         para = para.strip()
         if not para:
             continue
-
-        # Handle paragraphs with bullet points or bold text
         if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
             lines = para.split('\n')
             formatted_para = []
@@ -160,22 +154,10 @@ def format_response(text, prompt: str):
                     formatted_para.append(f"\n**{line[2:-2]}**\n")
                 else:
                     formatted_para.append(line)
-            para = '\n'.join(formatted_para)
-
-        # Process hyperlinks: detect URLs and strip surrounding square brackets
-        def replace_url(match):
-            url = match.group(1)
-            # Strip square brackets if they exist
-            if url.startswith('[') and url.endswith(']'):
-                url = url[1:-1]
-            return f'<a href="{url}" target="_blank">{url}</a>'
-
-        # Apply hyperlink formatting
-        para = re.sub(url_pattern, replace_url, para)
-
-        formatted.append(para)
-
-    # Join paragraphs with double newlines
+            formatted.append('\n'.join(formatted_para))
+        else:
+            formatted.append(para)
+    
     final_text = '\n\n'.join(formatted)
     return final_text
 
