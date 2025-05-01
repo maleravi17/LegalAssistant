@@ -1,4 +1,4 @@
-
+```python
 import os
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
@@ -141,7 +141,24 @@ def is_follow_up(prompt: str) -> bool:
     prompt_lower = prompt.lower().strip()
     return any(phrase == prompt_lower or phrase in prompt_lower for phrase in follow_up_phrases) and len(prompt_lower.split()) <= 4
 
-def format_response(text, prompt: str, is_follow_up: bool = False):
+def is_law_related(prompt: str, session_data: list) -> bool:
+    """Check if the prompt or recent session context is law-related."""
+    law_keywords = [
+        "ipc", "section", "act", "law", "legal", "court", "case", "judgment", "rights", "government",
+        "procedure", "passport", "crime", "criminal", "civil", "constitution", "statute", "legislation"
+    ]
+    prompt_lower = prompt.lower().strip()
+    # Check if prompt contains law-related keywords
+    if any(keyword in prompt_lower for keyword in law_keywords):
+        return True
+    # For follow-up prompts, check the last user query or assistant response
+    if is_follow_up(prompt):
+        last_user_query = next((msg['text'].lower() for msg in reversed(session_data[:-1]) if msg['role'] == 'user'), "")
+        last_assistant_response = next((msg['text'].lower() for msg in reversed(session_data[:-1]) if msg['role'] == 'assistant'), "")
+        return any(keyword in last_user_query or keyword in last_assistant_response for keyword in law_keywords)
+    return False
+
+def format_response(text, prompt: str, is_law_related: bool = False):
     """Format the response with paragraphs, bullet points, and proper hyperlinks."""
     # Remove unwanted prompts or disclaimers from the raw response
     text = re.sub(r"Would you like more information\?|\b[Pp]lease\s+let\s+me\s+know\b", "", text, flags=re.IGNORECASE)
@@ -173,14 +190,22 @@ def format_response(text, prompt: str, is_follow_up: bool = False):
     # Format hyperlinks (ensure no trailing punctuation)
     final_text = re.sub(r'(https?://[^\s<>]+)(?<![\.,;])', r'<a href="\1" target="_blank">\1</a>', final_text)
     
-    # Append disclaimer only for non-follow-up responses
-    if not is_follow_up:
+    # Append disclaimer only for law-related responses
+    if is_law_related:
         final_text += (
             "\n\nDisclaimer: This information is for educational purposes only and should not be considered legal advice. "
             "It is essential to consult with a legal professional for specific guidance regarding your situation."
         )
     
     return final_text.strip()
+
+def truncate_history(history: str, max_length: int = 6000) -> str:
+    """Truncate history to fit within token limits while preserving recent messages."""
+    if len(history) <= max_length:
+        return history
+    # Keep the last 80% of characters, prioritizing recent messages
+    start_index = int(len(history) * 0.2)
+    return history[start_index:]
 
 # Initialize Gemini model
 model = initialize_gemini()
@@ -249,6 +274,9 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
 
+        # Check if the prompt is law-related
+        is_law_query = is_law_related(prompt, session_data)
+
         # Append user input to session history
         session_data.append({"role": "user", "text": prompt})
 
@@ -256,8 +284,10 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         with open("prompts/base_prompt.txt", "r") as f:
             base_prompt = f.read()
 
-        # Construct conversation history (last 6 messages for context, like Grok)
-        history = "\n".join([f"{msg['role'].capitalize()}: {msg['text']}" for msg in session_data[-6:]])  # Increased to 6 for better context
+        # Construct conversation history (full session history)
+        history = "\n".join([f"{msg['role'].capitalize()}: {msg['text']}" for msg in session_data])
+        # Truncate history if too long to avoid token limits
+        history = truncate_history(history, max_length=6000)
 
         # Handle follow-up questions
         if is_follow_up(prompt):
@@ -267,14 +297,15 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
             prompt_instruction = (
                 f"The user has requested further information with the input '{prompt}'. "
                 f"Refer to the last user query: '{last_user_query}' and the assistant's response: '{last_assistant_response}'. "
-                "Provide a detailed, context-aware follow-up response that expands on the previous legal topic. "
-                "Include specific IPC sections, Indian Acts, or case law with source URLs (e.g., https://www.indiankanoon.org, https://lddashboard.legislative.gov.in). "
+                "Use the full conversation history to provide a detailed, context-aware follow-up response that expands on the previous legal topic. "
+                f"{'Include specific IPC sections, Indian Acts, or case law with source URLs (e.g., https://www.indiankanoon.org, https://lddashboard.legislative.gov.in) if the query is law-related.' if is_law_query else 'Provide a relevant response, politely declining if the query is not law-related.'} "
                 "Use a conversational tone, avoid asking 'Would you like more information?' or similar prompts, and do not include a disclaimer."
             )
         else:
             prompt_instruction = (
-                "Provide a detailed, accurate response to the user's legal query, focusing on Indian law. "
-                "Include specific IPC sections, Indian Acts, or case law with source URLs (e.g., https://www.indiankanoon.org, https://lddashboard.legislative.gov.in). "
+                "Provide a detailed, accurate response to the user's query, focusing on Indian law if the query is law-related. "
+                "Use the full conversation history to ensure context-aware answers. "
+                f"{'Include specific IPC sections, Indian Acts, or case law with source URLs (e.g., https://www.indiankanoon.org, https://lddashboard.legislative.gov.in) for law-related queries.' if is_law_query else 'Politely decline to answer if the query is not law-related, explaining that you specialize in Indian law.'} "
                 "Use a conversational tone and avoid asking 'Would you like more information?' or similar prompts."
             )
 
@@ -302,7 +333,7 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
 
         try:
             response = await retry_request(generate_content)
-            assistant_response = format_response(response.text, prompt, is_follow_up=is_follow_up(prompt))
+            assistant_response = format_response(response.text, prompt, is_law_related=is_law_query)
             session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
@@ -310,7 +341,7 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
             try:
                 model = rotate_key()
                 response = await retry_request(generate_content)
-                assistant_response = format_response(response.text, prompt, is_follow_up=is_follow_up(prompt))
+                assistant_response = format_response(response.text, prompt, is_law_related=is_law_query)
                 session_data.append({"role": "assistant", "text": assistant_response})
                 save_session(session_id, session_data)
                 return ChatResponse(response=assistant_response)
@@ -335,3 +366,4 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+```
