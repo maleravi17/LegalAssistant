@@ -780,18 +780,54 @@
             messageDiv.classList.add('message', role, isDarkTheme ? 'dark' : 'light');
             const contentDiv = document.createElement('div');
             contentDiv.classList.add('message-content');
+
             let formattedText = text;
+
+            // If the text already contains <a> tags (formatted by the server), avoid reprocessing hyperlinks
             if (!/<a\s+href=["'](https?:\/\/)[^\s<>]+["'][^>]*>.*<\/a>/.test(text)) {
+                // Apply minimal formatting for paragraphs and lists if no hyperlinks are present
                 formattedText = text
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>')
                     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
                     .replace(/• (.+)/g, '<li>$1</li>');
+
                 if (formattedText.includes('<li>')) {
-                    formattedText = formattedText.replace(/<p>(<li>.+<\/li>)<\/p>/g, '<ul>$1</ul>');
+                    formattedText = formattedText.replace(/(<li>.+<\/li>)/g, '<ul>$1</ul>');
+                }
+            } else {
+                // If the text contains hyperlinks, only apply paragraph and list formatting carefully
+                formattedText = text
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/\n/g, '<br>')
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+                // Convert bullet points to <ul><li> without breaking existing HTML
+                if (formattedText.includes('• ')) {
+                    const paragraphs = formattedText.split('</p><p>');
+                    formattedText = paragraphs.map(para => {
+                        if (para.includes('• ')) {
+                            const lines = para.split('<br>');
+                            let inList = false;
+                            const formattedLines = lines.map(line => {
+                                if (line.includes('• ')) {
+                                    const content = line.replace('• ', '');
+                                    return `<li>${content}</li>`;
+                                }
+                                return line;
+                            }).join('');
+                            return `<ul>${formattedLines}</ul>`;
+                        }
+                        return para;
+                    }).join('</p><p>');
                 }
             }
-            formattedText = `<p>${formattedText}</p>`;
+
+            // Ensure the text is wrapped in a paragraph if it doesn't already have HTML structure
+            if (!formattedText.startsWith('<p>') && !formattedText.startsWith('<ul>')) {
+                formattedText = `<p>${formattedText}</p>`;
+            }
+
             contentDiv.innerHTML = formattedText;
             messageDiv.appendChild(contentDiv);
 
