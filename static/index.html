@@ -1,10 +1,389 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lexi</title>
+<body class="dark">
+    <div id="container">
+        <div id="chat-container" class="dark">
+            <div id="controls">
+                <button id="new-chat" class="control-btn dark" data-tooltip="New Chat">➕</button>
+                <button id="history-toggle" class="control-btn dark" data-tooltip="History">📜</button>
+                <div id="theme-switch">
+                    <label>
+                        <input type="checkbox" id="theme-toggle">
+                        <span class="switch"></span>
+                        <span>Light</span>
+                        <span>Dark</span>
+                    </label>
+                </div>
+            </div>
+            <div id="chat-header" class="dark">Lexi</div>
+            <div id="chat-display" class="dark">
+                <div class="message bot dark">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>
+            </div>
+            <form id="chat-form">
+                <textarea id="prompt" class="dark" placeholder="Ask me anything legal..." required></textarea>
+                <label class="upload-btn dark" for="file-upload" data-tooltip="Attach">📎</label>
+                <input type="file" id="file-upload" style="display: none;" accept="image/*,application/pdf">
+                <button type="submit" class="send-btn dark">↑</button>
+            </form>
+        </div>
+        <div id="resources-container" class="dark">
+            <div id="resources-section" class="dark">
+                <h2 class="dark">Legal Resources</h2>
+                <ul id="resources-list">
+                    <li><a href="https://lawchakra.in/" target="_blank" class="dark">LawChakra</a></li>
+                    <li><a href="https://indialegallive.com/" target="_blank" class="dark">India Legal</a></li>
+                    <li><a href="https://lawtrend.in/" target="_blank" class="dark">Law Trend</a></li>
+                    <li><a href="https://legal.economictimes.indiatimes.com/" target="_blank" class="dark">ET LegalWorld</a></li>
+                    <li><a href="https://www.barandbench.com/" target="_blank" class="dark">Bar and Bench</a></li>
+                    <li><a href="https://www.livelaw.in/" target="_blank" class="dark">LiveLaw</a></li>
+                    <li><a href="https://theleaflet.in/" target="_blank" class="dark">The Leaflet</a></li>
+                </ul>
+            </div>
+        </div>
+        <div id="sidebar" class="dark">
+            <h2 class="dark">Chat History</h2>
+            <button id="close-sidebar" class="dark">Close</button>
+            <ul id="history-list"></ul>
+        </div>
+    </div>
+
+    <script>
+        const chatDisplay = document.getElementById('chat-display');
+        const chatForm = document.getElementById('chat-form');
+        const promptInput = document.getElementById('prompt');
+        const newChatBtn = document.getElementById('new-chat');
+        const historyToggleBtn = document.getElementById('history-toggle');
+        const themeToggle = document.getElementById('theme-toggle');
+        const fileUpload = document.getElementById('file-upload');
+        const sidebar = document.getElementById('sidebar');
+        const closeSidebarBtn = document.getElementById('close-sidebar');
+        const historyList = document.getElementById('history-list');
+        const chatContainer = document.getElementById('chat-container');
+        const chatHeader = document.getElementById('chat-header');
+        const resourcesContainer = document.getElementById('resources-container');
+        const resourcesSection = document.getElementById('resources-section');
+
+        let sessionId = localStorage.getItem('sessionId') || 'pla_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('sessionId', sessionId);
+        let historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
+        let lastPrompt = null;
+        let isDarkTheme = localStorage.getItem('theme') !== 'light';
+
+        applyTheme(isDarkTheme);
+
+        promptInput.addEventListener('input', () => {
+            promptInput.style.height = 'auto';
+            promptInput.style.height = `${promptInput.scrollHeight}px`;
+        });
+
+        themeToggle.addEventListener('change', () => {
+            isDarkTheme = !themeToggle.checked;
+            applyTheme(isDarkTheme);
+            localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
+        });
+
+        fileUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const fileContent = event.target.result;
+                    addMessage('user', `Uploaded ${file.name}: [Content preview not shown, processed by bot]`);
+                    addMessage('bot', `Thank you for uploading ${file.name}. I’m analyzing it. Would you like more information?`, true);
+                };
+                reader.readAsDataURL(file);
+                fileUpload.value = '';
+            }
+        });
+
+        newChatBtn.addEventListener('click', () => {
+            sessionId = 'pla_' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('sessionId', sessionId);
+            chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
+            updateHistory();
+            sidebar.style.display = 'none';
+        });
+
+        historyToggleBtn.addEventListener('click', () => {
+            toggleSidebar();
+            if (sidebar.style.display !== 'none') {
+                updateHistory();
+            }
+        });
+
+        closeSidebarBtn.addEventListener('click', () => {
+            sidebar.style.display = 'none';
+        });
+
+        sidebar.addEventListener('click', (e) => {
+            if (e.target === sidebar) {
+                sidebar.style.display = 'none';
+            }
+        });
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const prompt = promptInput.value.trim();
+            lastPrompt = prompt;
+            addMessage('user', prompt);
+            promptInput.value = '';
+            promptInput.style.height = 'auto';
+            const typing = addMessage('bot', 'Decoding legal mysteries...');
+
+            const formData = new FormData();
+            formData.append('session_id', sessionId);
+            formData.append('prompt', prompt);
+            if (fileUpload.files.length > 0) {
+                formData.append('file', fileUpload.files[0]);
+                fileUpload.value = '';
+            }
+
+            try {
+                const response = await tryFetch('/chat', {
+                    method: 'POST',
+                    body: formData
+                }, 3, 5000);
+                const data = await response.json();
+                if (response.ok) {
+                    const message = addMessage('bot', data.response, true);
+                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { 
+                        const blob = new Blob([data.response], { type: 'text/plain' }); 
+                        const url = window.URL.createObjectURL(blob); 
+                        const a = document.createElement('a'); 
+                        a.href = url; 
+                        a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; 
+                        a.click(); 
+                        window.URL.revokeObjectURL(url); 
+                    }, isDarkTheme));
+                    updateHistory();
+                } else {
+                    addMessage('bot', `Error: ${data.detail}`);
+                }
+            } catch (error) {
+                addMessage('bot', 'Sorry, I couldn’t connect to the server. Please try again.');
+            } finally {
+                chatDisplay.removeChild(typing);
+            }
+        });
+
+        async function regenerateResponse() {
+            if (!lastPrompt) return;
+            const typing = addMessage('bot', 'Regenerating response...');
+            try {
+                const response = await tryFetch('/regenerate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId, prompt: lastPrompt, regenerate: true })
+                }, 3, 5000);
+                const data = await response.json();
+                if (response.ok) {
+                    const lastUserMessage = chatDisplay.querySelector('.user:last-child');
+                    const nextBotMessage = lastUserMessage ? lastUserMessage.nextElementSibling : null;
+                    if (nextBotMessage && nextBotMessage.classList.contains('bot')) {
+                        chatDisplay.removeChild(nextBotMessage);
+                    }
+                    const message = addMessage('bot', data.response, true);
+                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { 
+                        const blob = new Blob([data.response], { type: 'text/plain' }); 
+                        const url = window.URL.createObjectURL(blob); 
+                        const a = document.createElement('a'); 
+                        a.href = url; 
+                        a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; 
+                        a.click(); 
+                        window.URL.revokeObjectURL(url); 
+                    }, isDarkTheme));
+                } else {
+                    addMessage('bot', `Error: ${data.detail}`);
+                }
+            } catch (error) {
+                addMessage('bot', 'Sorry, I couldn’t regenerate the response. Please try again.');
+            } finally {
+                chatDisplay.removeChild(typing);
+            }
+        }
+
+        async function tryFetch(url, options, retries, delay) {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+                    return response;
+                } catch (err) {
+                    if (i < retries - 1) {
+                        await new Promise(res => setTimeout(res, delay));
+                        continue;
+                    }
+                    throw err;
+                }
+            }
+        }
+
+        function createActionButton(text, tooltip, callback, isDarkTheme) {
+            const button = document.createElement('button');
+            button.textContent = text;
+            button.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
+            button.setAttribute('data-tooltip', tooltip);
+            button.onclick = callback;
+            return button;
+        }
+
+        function addMessage(role, text, isBotWithActions = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.classList.add('message', role, isDarkTheme ? 'dark' : 'light');
+            const contentDiv = document.createElement('div');
+            contentDiv.classList.add('message-content');
+
+            // Preserve HTML formatting, including <a> tags
+            let formattedText = text;
+            if (!/<[a-z][\s\S]*>/i.test(text)) { // Check if text already contains HTML tags
+                formattedText = text
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/\n/g, '<br>')
+                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                    .replace(/• (.+)/g, '<li>$1</li>');
+                if (formattedText.includes('<li>')) {
+                    formattedText = formattedText.replace(/(<li>.+<\/li>)/g, '<ul>$1</ul>');
+                }
+                if (!formattedText.startsWith('<p>') && !formattedText.startsWith('<ul>')) {
+                    formattedText = `<p>${formattedText}</p>`;
+                }
+            } else {
+                // If text contains HTML (e.g., <a> tags from server), use it directly
+                formattedText = text;
+            }
+
+            contentDiv.innerHTML = formattedText; // Use innerHTML to render links
+            messageDiv.appendChild(contentDiv);
+
+            if (isBotWithActions) {
+                const actionsDiv = document.createElement('div');
+                actionsDiv.classList.add('actions');
+                messageDiv.appendChild(actionsDiv);
+            }
+
+            chatDisplay.appendChild(messageDiv);
+            chatDisplay.scrollTop = chatDisplay.scrollHeight;
+            return messageDiv;
+        }
+
+        async function updateHistory() {
+            historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
+            if (!historySessions.includes(sessionId)) {
+                historySessions.push(sessionId);
+                localStorage.setItem('historySessions', JSON.stringify(historySessions));
+            }
+            historyList.innerHTML = '';
+            if (historySessions.length === 0) {
+                const li = document.createElement('li');
+                li.textContent = "No history available";
+                historyList.appendChild(li);
+                return;
+            }
+            for (const id of historySessions) {
+                const response = await fetch(`/memory/${id}`);
+                const data = await response.json();
+                const firstUserMessage = data.messages.find(msg => msg.role === 'user');
+                const title = firstUserMessage ? firstUserMessage.text.slice(0, 30) + (firstUserMessage.text.length > 30 ? '...' : '') : `Session ${id.slice(4, 10)}`;
+                const timestamp = firstUserMessage ? new Date(firstUserMessage.timestamp).toLocaleString() : 'Unknown';
+
+                const li = document.createElement('li');
+                li.classList.add('history-item');
+                li.innerHTML = `
+                    <div class="title">${title}</div>
+                    <div class="timestamp">${timestamp}</div>
+                `;
+                li.addEventListener('click', () => loadSession(id));
+                historyList.appendChild(li);
+            }
+        }
+
+        async function loadSession(id) {
+            sessionId = id;
+            localStorage.setItem('sessionId', id);
+            const response = await fetch(`/memory/${id}`);
+            const data = await response.json();
+            chatDisplay.innerHTML = '';
+            data.messages.forEach(msg => {
+                const isBotWithActions = msg.role === 'assistant' && msg.message_id !== 'initial';
+                addMessage(msg.role, msg.text, isBotWithActions);
+            });
+            sidebar.style.display = 'none';
+        }
+
+        function toggleSidebar() {
+            if (sidebar.style.display === 'none') {
+                sidebar.style.display = 'block';
+            } else {
+                sidebar.style.display = 'none';
+            }
+        }
+
+        function applyTheme(dark) {
+            isDarkTheme = dark;
+            document.body.classList.toggle('dark', isDarkTheme);
+            document.body.classList.toggle('light', !isDarkTheme);
+            chatContainer.classList.toggle('dark', isDarkTheme);
+            chatContainer.classList.toggle('light', !isDarkTheme);
+            chatHeader.classList.toggle('dark', isDarkTheme);
+            chatHeader.classList.toggle('light', !isDarkTheme);
+            chatDisplay.classList.toggle('dark', isDarkTheme);
+            chatDisplay.classList.toggle('light', !isDarkTheme);
+            promptInput.classList.toggle('dark', isDarkTheme);
+            promptInput.classList.toggle('light', !isDarkTheme);
+            sidebar.classList.toggle('dark', isDarkTheme);
+            sidebar.classList.toggle('light', !isDarkTheme);
+            sidebar.querySelector('h2').classList.toggle('dark', isDarkTheme);
+            sidebar.querySelector('h2').classList.toggle('light', !isDarkTheme);
+            newChatBtn.classList.toggle('dark', isDarkTheme);
+            newChatBtn.classList.toggle('light', !isDarkTheme);
+            historyToggleBtn.classList.toggle('dark', isDarkTheme);
+            historyToggleBtn.classList.toggle('light', !isDarkTheme);
+            closeSidebarBtn.classList.toggle('dark', isDarkTheme);
+            closeSidebarBtn.classList.toggle('light', !isDarkTheme);
+            document.querySelectorAll('.message').forEach(msg => {
+                msg.classList.toggle('dark', isDarkTheme);
+                msg.classList.toggle('light', !isDarkTheme);
+            });
+            document.querySelectorAll('.action-btn').forEach(btn => {
+                btn.classList.toggle('dark', isDarkTheme);
+                btn.classList.toggle('light', !isDarkTheme);
+            });
+            document.querySelectorAll('.control-btn').forEach(btn => {
+                btn.classList.toggle('dark', isDarkTheme);
+                btn.classList.toggle('light', !isDarkTheme);
+            });
+            document.querySelectorAll('#history-list li').forEach(li => {
+                li.classList.toggle('dark', isDarkTheme);
+                li.classList.toggle('light', !isDarkTheme);
+            });
+            resourcesContainer.classList.toggle('dark', isDarkTheme);
+            resourcesContainer.classList.toggle('light', !isDarkTheme);
+            resourcesSection.classList.toggle('dark', isDarkTheme);
+            resourcesSection.classList.toggle('light', !isDarkTheme);
+            resourcesSection.querySelector('h2').classList.toggle('dark', isDarkTheme);
+            resourcesSection.querySelector('h2').classList.toggle('light', !isDarkTheme);
+            document.querySelectorAll('#resources-list a').forEach(link => {
+                link.classList.toggle('dark', isDarkTheme);
+                link.classList.toggle('light', !isDarkTheme);
+            });
+            themeToggle.checked = !isDarkTheme;
+        }
+
+        // Initial load
+        updateHistory();
+    </script>
     <style>
+        /* Existing styles remain unchanged */
         body {
             font-family: 'Roboto', Arial, sans-serif;
             margin: 0;
@@ -240,6 +619,13 @@
         .message-content {
             text-align: left;
             width: 100%;
+        }
+        .message-content a {
+            color: #1e88e5;
+            text-decoration: underline;
+        }
+        .message-content a:hover {
+            color: #4fc3f7;
         }
         .actions {
             display: flex;
@@ -547,414 +933,5 @@
             }
         }
     </style>
-</head>
-<body class="dark">
-    <div id="container">
-        <div id="chat-container" class="dark">
-            <div id="controls">
-                <button id="new-chat" class="control-btn dark" data-tooltip="New Chat">➕</button>
-                <button id="history-toggle" class="control-btn dark" data-tooltip="History">📜</button>
-                <div id="theme-switch">
-                    <label>
-                        <input type="checkbox" id="theme-toggle">
-                        <span class="switch"></span>
-                        <span>Light</span>
-                        <span>Dark</span>
-                    </label>
-                </div>
-            </div>
-            <div id="chat-header" class="dark">Lexi</div>
-            <div id="chat-display" class="dark">
-                <div class="message bot dark">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>
-            </div>
-            <form id="chat-form">
-                <textarea id="prompt" class="dark" placeholder="Ask me anything legal..." required></textarea>
-                <label class="upload-btn dark" for="file-upload" data-tooltip="Attach">📎</label>
-                <input type="file" id="file-upload" style="display: none;" accept="image/*,application/pdf">
-                <button type="submit" class="send-btn dark">↑</button>
-            </form>
-        </div>
-        <div id="resources-container" class="dark">
-            <div id="resources-section" class="dark">
-                <h2 class="dark">Legal Resources</h2>
-                <ul id="resources-list">
-                    <li><a href="https://lawchakra.in/" target="_blank" class="dark">LawChakra</a></li>
-                    <li><a href="https://indialegallive.com/" target="_blank" class="dark">India Legal</a></li>
-                    <li><a href="https://lawtrend.in/" target="_blank" class="dark">Law Trend</a></li>
-                    <li><a href="https://legal.economictimes.indiatimes.com/" target="_blank" class="dark">ET LegalWorld</a></li>
-                    <li><a href="https://www.barandbench.com/" target="_blank" class="dark">Bar and Bench</a></li>
-                    <li><a href="https://www.livelaw.in/" target="_blank" class="dark">LiveLaw</a></li>
-                    <li><a href="https://theleaflet.in/" target="_blank" class="dark">The Leaflet</a></li>
-                </ul>
-            </div>
-        </div>
-        <div id="sidebar" class="dark">
-            <h2 class="dark">Chat History</h2>
-            <button id="close-sidebar" class="dark">Close</button>
-            <ul id="history-list"></ul>
-        </div>
-    </div>
-
-    <script>
-        const chatDisplay = document.getElementById('chat-display');
-        const chatForm = document.getElementById('chat-form');
-        const promptInput = document.getElementById('prompt');
-        const newChatBtn = document.getElementById('new-chat');
-        const historyToggleBtn = document.getElementById('history-toggle');
-        const themeToggle = document.getElementById('theme-toggle');
-        const fileUpload = document.getElementById('file-upload');
-        const sidebar = document.getElementById('sidebar');
-        const closeSidebarBtn = document.getElementById('close-sidebar');
-        const historyList = document.getElementById('history-list');
-        const chatContainer = document.getElementById('chat-container');
-        const chatHeader = document.getElementById('chat-header');
-        const resourcesContainer = document.getElementById('resources-container');
-        const resourcesSection = document.getElementById('resources-section');
-
-        let sessionId = localStorage.getItem('sessionId') || 'pla_' + Math.random().toString(36).substr(2, 9);
-        localStorage.setItem('sessionId', sessionId);
-        let historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
-        let lastPrompt = null;
-        let isDarkTheme = localStorage.getItem('theme') !== 'light';
-
-        applyTheme(isDarkTheme);
-
-        promptInput.addEventListener('input', () => {
-            promptInput.style.height = 'auto';
-            promptInput.style.height = `${promptInput.scrollHeight}px`;
-        });
-
-        themeToggle.addEventListener('change', () => {
-            isDarkTheme = !themeToggle.checked;
-            applyTheme(isDarkTheme);
-            localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
-        });
-
-        fileUpload.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    const fileContent = event.target.result;
-                    addMessage('user', `Uploaded ${file.name}: [Content preview not shown, processed by bot]`);
-                    addMessage('bot', `Thank you for uploading ${file.name}. I’m analyzing it. Would you like more information?`, true);
-                };
-                reader.readAsDataURL(file);
-                fileUpload.value = '';
-            }
-        });
-
-        newChatBtn.addEventListener('click', () => {
-            sessionId = 'pla_' + Math.random().toString(36).substr(2, 9);
-            localStorage.setItem('sessionId', sessionId);
-            chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
-            updateHistory();
-            sidebar.style.display = 'none';
-        });
-
-        historyToggleBtn.addEventListener('click', () => {
-            toggleSidebar();
-            if (sidebar.style.display !== 'none') {
-                updateHistory();
-            }
-        });
-
-        closeSidebarBtn.addEventListener('click', () => {
-            sidebar.style.display = 'none';
-        });
-
-        sidebar.addEventListener('click', (e) => {
-            if (e.target === sidebar) {
-                sidebar.style.display = 'none';
-            }
-        });
-
-        chatForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const prompt = promptInput.value.trim();
-            lastPrompt = prompt;
-            addMessage('user', prompt);
-            promptInput.value = '';
-            promptInput.style.height = 'auto';
-            const typing = addMessage('bot', 'Decoding legal mysteries...');
-
-            const formData = new FormData();
-            formData.append('session_id', sessionId);
-            formData.append('prompt', prompt);
-            if (fileUpload.files.length > 0) {
-                formData.append('file', fileUpload.files[0]);
-                fileUpload.value = '';
-            }
-
-            try {
-                const response = await tryFetch('/chat', {
-                    method: 'POST',
-                    body: formData
-                }, 3, 5000);
-                const data = await response.json();
-                if (response.ok) {
-                    const message = addMessage('bot', data.response, true);
-                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { 
-                        const blob = new Blob([data.response], { type: 'text/plain' }); 
-                        const url = window.URL.createObjectURL(blob); 
-                        const a = document.createElement('a'); 
-                        a.href = url; 
-                        a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; 
-                        a.click(); 
-                        window.URL.revokeObjectURL(url); 
-                    }, isDarkTheme));
-                    updateHistory();
-                } else {
-                    addMessage('bot', `Error: ${data.detail}`);
-                }
-            } catch (error) {
-                addMessage('bot', 'Sorry, I couldn’t connect to the server. Please try again.');
-            } finally {
-                chatDisplay.removeChild(typing);
-            }
-        });
-
-        async function regenerateResponse() {
-            if (!lastPrompt) return;
-            const typing = addMessage('bot', 'Regenerating response...');
-            try {
-                const response = await tryFetch('/regenerate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: sessionId, prompt: lastPrompt, regenerate: true })
-                }, 3, 5000);
-                const data = await response.json();
-                if (response.ok) {
-                    const lastUserMessage = chatDisplay.querySelector('.user:last-child');
-                    const nextBotMessage = lastUserMessage ? lastUserMessage.nextElementSibling : null;
-                    if (nextBotMessage && nextBotMessage.classList.contains('bot')) {
-                        chatDisplay.removeChild(nextBotMessage);
-                    }
-                    const message = addMessage('bot', data.response, true);
-                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { 
-                        const blob = new Blob([data.response], { type: 'text/plain' }); 
-                        const url = window.URL.createObjectURL(blob); 
-                        const a = document.createElement('a'); 
-                        a.href = url; 
-                        a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; 
-                        a.click(); 
-                        window.URL.revokeObjectURL(url); 
-                    }, isDarkTheme));
-                } else {
-                    addMessage('bot', `Error: ${data.detail}`);
-                }
-            } catch (error) {
-                addMessage('bot', 'Sorry, I couldn’t regenerate the response. Please try again.');
-            } finally {
-                chatDisplay.removeChild(typing);
-            }
-        }
-
-        async function tryFetch(url, options, retries, delay) {
-            for (let i = 0; i < retries; i++) {
-                try {
-                    const response = await fetch(url, options);
-                    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
-                    return response;
-                } catch (err) {
-                    if (i < retries - 1) {
-                        await new Promise(res => setTimeout(res, delay));
-                        continue;
-                    }
-                    throw err;
-                }
-            }
-        }
-
-        function createActionButton(text, tooltip, callback, isDarkTheme) {
-            const button = document.createElement('button');
-            button.textContent = text;
-            button.classList.add('action-btn', isDarkTheme ? 'dark' : 'light');
-            button.setAttribute('data-tooltip', tooltip);
-            button.onclick = callback;
-            return button;
-        }
-
-        function addMessage(role, text, isBotWithActions = false) {
-            const messageDiv = document.createElement('div');
-            messageDiv.classList.add('message', role, isDarkTheme ? 'dark' : 'light');
-            const contentDiv = document.createElement('div');
-            contentDiv.classList.add('message-content');
-
-            let formattedText = text;
-
-            if (!/<a\s+href=["'](https?:\/\/)[^\s<>]+["'][^>]*>.*<\/a>/.test(text)) {
-                formattedText = text
-                    .replace(/\n\n/g, '</p><p>')
-                    .replace(/\n/g, '<br>')
-                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-                    .replace(/• (.+)/g, '<li>$1</li>');
-
-                if (formattedText.includes('<li>')) {
-                    formattedText = formattedText.replace(/(<li>.+<\/li>)/g, '<ul>$1</ul>');
-                }
-            } else {
-                formattedText = text
-                    .replace(/\n\n/g, '</p><p>')
-                    .replace(/\n/g, '<br>')
-                    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-
-                if (formattedText.includes('• ')) {
-                    const paragraphs = formattedText.split('</p><p>');
-                    formattedText = paragraphs.map(para => {
-                        if (para.includes('• ')) {
-                            const lines = para.split('<br>');
-                            let inList = false;
-                            const formattedLines = lines.map(line => {
-                                if (line.includes('• ')) {
-                                    const content = line.replace('• ', '');
-                                    return `<li>${content}</li>`;
-                                }
-                                return line;
-                            }).join('');
-                            return `<ul>${formattedLines}</ul>`;
-                        }
-                        return para;
-                    }).join('</p><p>');
-                }
-            }
-
-            if (!formattedText.startsWith('<p>') && !formattedText.startsWith('<ul>')) {
-                formattedText = `<p>${formattedText}</p>`;
-            }
-
-            contentDiv.innerHTML = formattedText;
-            messageDiv.appendChild(contentDiv);
-
-            messageDiv.style.height = 'auto';
-            messageDiv.style.minHeight = '0';
-
-            if (isBotWithActions) {
-                const actionsDiv = document.createElement('div');
-                actionsDiv.classList.add('actions');
-                messageDiv.appendChild(actionsDiv);
-            }
-
-            chatDisplay.appendChild(messageDiv);
-            chatDisplay.scrollTop = chatDisplay.scrollHeight;
-            return messageDiv;
-        }
-
-        async function updateHistory() {
-            historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
-            if (!historySessions.includes(sessionId)) {
-                historySessions.push(sessionId);
-                localStorage.setItem('historySessions', JSON.stringify(historySessions));
-            }
-            historyList.innerHTML = '';
-            if (historySessions.length === 0) {
-                const li = document.createElement('li');
-                li.textContent = "No history available";
-                historyList.appendChild(li);
-                return;
-            }
-            for (const id of historySessions) {
-                const response = await fetch(`/memory/${id}`);
-                const data = await response.json();
-                const firstUserMessage = data.messages.find(msg => msg.role === 'user');
-                const title = firstUserMessage ? firstUserMessage.text.slice(0, 30) + (firstUserMessage.text.length > 30 ? '...' : '') : `Session ${id.slice(4, 10)}`;
-                const timestamp = firstUserMessage ? new Date(firstUserMessage.timestamp).toLocaleString() : 'Unknown';
-
-                const li = document.createElement('li');
-                li.classList.add('history-item');
-                li.innerHTML = `
-                    <div class="title">${title}</div>
-                    <div class="timestamp">${timestamp}</div>
-                `;
-                li.addEventListener('click', () => loadSession(id));
-                historyList.appendChild(li);
-            }
-        }
-
-        async function loadSession(id) {
-            sessionId = id;
-            localStorage.setItem('sessionId', id);
-            const response = await fetch(`/memory/${id}`);
-            const data = await response.json();
-            chatDisplay.innerHTML = '';
-            data.messages.forEach(msg => {
-                const isBotWithActions = msg.role === 'assistant' && msg.message_id !== 'initial';
-                addMessage(msg.role, msg.text, isBotWithActions);
-            });
-            sidebar.style.display = 'none';
-        }
-
-        function toggleSidebar() {
-            if (sidebar.style.display === 'none') {
-                sidebar.style.display = 'block';
-            } else {
-                sidebar.style.display = 'none';
-            }
-        }
-
-        function applyTheme(dark) {
-            isDarkTheme = dark;
-            document.body.classList.toggle('dark', isDarkTheme);
-            document.body.classList.toggle('light', !isDarkTheme);
-            chatContainer.classList.toggle('dark', isDarkTheme);
-            chatContainer.classList.toggle('light', !isDarkTheme);
-            chatHeader.classList.toggle('dark', isDarkTheme);
-            chatHeader.classList.toggle('light', !isDarkTheme);
-            chatDisplay.classList.toggle('dark', isDarkTheme);
-            chatDisplay.classList.toggle('light', !isDarkTheme);
-            promptInput.classList.toggle('dark', isDarkTheme);
-            promptInput.classList.toggle('light', !isDarkTheme);
-            sidebar.classList.toggle('dark', isDarkTheme);
-            sidebar.classList.toggle('light', !isDarkTheme);
-            sidebar.querySelector('h2').classList.toggle('dark', isDarkTheme);
-            sidebar.querySelector('h2').classList.toggle('light', !isDarkTheme);
-            newChatBtn.classList.toggle('dark', isDarkTheme);
-            newChatBtn.classList.toggle('light', !isDarkTheme);
-            historyToggleBtn.classList.toggle('dark', isDarkTheme);
-            historyToggleBtn.classList.toggle('light', !isDarkTheme);
-            closeSidebarBtn.classList.toggle('dark', isDarkTheme);
-            closeSidebarBtn.classList.toggle('light', !isDarkTheme);
-            document.querySelectorAll('.message').forEach(msg => {
-                msg.classList.toggle('dark', isDarkTheme);
-                msg.classList.toggle('light', !isDarkTheme);
-            });
-            document.querySelectorAll('.action-btn').forEach(btn => {
-                btn.classList.toggle('dark', isDarkTheme);
-                btn.classList.toggle('light', !isDarkTheme);
-            });
-            document.querySelectorAll('.control-btn').forEach(btn => {
-                btn.classList.toggle('dark', isDarkTheme);
-                btn.classList.toggle('light', !isDarkTheme);
-            });
-            document.querySelectorAll('#history-list li').forEach(li => {
-                li.classList.toggle('dark', isDarkTheme);
-                li.classList.toggle('light', !isDarkTheme);
-            });
-            resourcesContainer.classList.toggle('dark', isDarkTheme);
-            resourcesContainer.classList.toggle('light', !isDarkTheme);
-            resourcesSection.classList.toggle('dark', isDarkTheme);
-            resourcesSection.classList.toggle('light', !isDarkTheme);
-            resourcesSection.querySelector('h2').classList.toggle('dark', isDarkTheme);
-            resourcesSection.querySelector('h2').classList.toggle('light', !isDarkTheme);
-            document.querySelectorAll('#resources-list a').forEach(link => {
-                link.classList.toggle('dark', isDarkTheme);
-                link.classList.toggle('light', !isDarkTheme);
-            });
-            themeToggle.checked = !isDarkTheme;
-        }
-
-        // Initial load
-        updateHistory();
-    </script>
 </body>
 </html>
