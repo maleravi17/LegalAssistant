@@ -15,8 +15,6 @@ import shutil
 import logging
 import tempfile
 import random
-from datetime import datetime
-from typing import List, Dict, Optional
 
 # Load environment variables
 load_dotenv()
@@ -34,25 +32,13 @@ os.makedirs(SESSION_FOLDER, exist_ok=True)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class Message(BaseModel):
-    message_id: str
-    role: str
-    text: str
-    timestamp: str
-    intent: Optional[str] = None
-
-class SessionData(BaseModel):
-    messages: List[Message]
-    memory_enabled: bool = True
-
-def load_session(session_id: str) -> SessionData:
+def load_session(session_id):
+    """Load session data from a file."""
     session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
     if os.path.exists(session_file):
         try:
             with open(session_file, "r") as f:
-                data = json.load(f)
-                messages = [Message(**msg) for msg in data.get("messages", [])]
-                return SessionData(messages=messages, memory_enabled=data.get("memory_enabled", True))
+                return json.load(f)
         except (json.JSONDecodeError, Exception) as e:
             logger.error(f"Error loading session file {session_file}: {str(e)}")
             backup_dir = "backup_sessions"
@@ -63,20 +49,22 @@ def load_session(session_id: str) -> SessionData:
                 logger.info(f"Moved corrupted session file to backup: {backup_file}")
             except Exception as move_error:
                 logger.error(f"Failed to move corrupted session file: {move_error}")
-            return SessionData(messages=[])
+            return []
     logger.warning(f"Session file not found: {session_file}")
-    return SessionData(messages=[])
+    return []
 
-def save_session(session_id: str, session_data: SessionData):
+def save_session(session_id, session_data):
+    """Save session data to a file."""
     session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
     try:
         with open(session_file, "w") as f:
-            json.dump(session_data.dict(), f)
-        logger.info(f"Successfully saved session: {session_id}")
+            json.dump(session_data, f)
+        logger.info(f"Successfully saved session: {session_file}")
     except Exception as e:
         logger.error(f"Failed to save session {session_file}: {str(e)}")
 
 def initialize_gemini():
+    """Initialize the Gemini model and return the model instance."""
     global model
     try:
         genai.configure(api_key=API_KEYS[current_key_index])
@@ -89,6 +77,7 @@ def initialize_gemini():
         raise HTTPException(status_code=500, detail=f"Failed to initialize Gemini model: {str(e)}")
 
 def rotate_key():
+    """Rotate to the next API key."""
     global current_key_index
     if current_key_index < len(API_KEYS) - 1:
         current_key_index += 1
@@ -99,6 +88,7 @@ def rotate_key():
         raise HTTPException(status_code=500, detail="All API keys have been used. Please add more keys.")
 
 async def retry_request(func, retries=3, delay=5):
+    """Retry a function with exponential backoff."""
     for attempt in range(retries):
         try:
             return await func()
@@ -108,14 +98,16 @@ async def retry_request(func, retries=3, delay=5):
                 raise
             logger.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying in {delay} seconds...")
             await asyncio.sleep(delay)
-            delay *= 2
+            delay *= 2  # Exponential backoff
 
 async def process_uploaded_file(file: UploadFile):
+    """Process uploaded PDF or image files."""
     if file.content_type == 'application/pdf':
         try:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
                 temp_file.write(await file.read())
                 temp_file_path = temp_file.name
+
             with open(temp_file_path, 'rb') as pdf_file:
                 pdf_reader = PyPDF2.PdfReader(pdf_file)
                 text = ""
@@ -137,67 +129,54 @@ async def process_uploaded_file(file: UploadFile):
         return f"Unsupported file type: {file.content_type}"
 
 def is_greeting(prompt: str) -> bool:
+    """Check if the input is a simple greeting."""
     greetings = ["hello", "hi", "hey", "hola", "namaste", "good morning", "good evening"]
     prompt_lower = prompt.lower().strip()
     return any(greeting in prompt_lower for greeting in greetings) and len(prompt_lower.split()) <= 2
 
-def summarize_history(messages: List[Message], max_length: int = 500) -> str:
-    if not messages:
-        return ""
-    summary = []
-    for msg in messages[-10:]:
-        if msg.role == "user":
-            summary.append(f"User asked: {msg.text}")
-        elif msg.role == "assistant":
-            summary.append(f"Assistant responded: {msg.text}")
-    summary_text = " ".join(summary)
-    return summary_text[:max_length] + "..." if len(summary_text) > max_length else summary_text
-
 def format_response(text, prompt: str):
-    paragraphs = text.split('\n\n') if '\n\n' in text else [text]
+    """Format the response with paragraphs, bullet points, and properly formatted hyperlinks."""
+    # First, split text into paragraphs
+    paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
-    url_pattern = r'(?<![\w-])(https?://[^\s<>\[\]]+)(?![\w-])'  # Improved regex to avoid capturing brackets
+
+    # Regex to match URLs, excluding square brackets
+    url_pattern = r'(?<![\w-])(https?:\/\/[^\s<>\]\)]+)(?![\w-])'
 
     for para in paragraphs:
         para = para.strip()
         if not para:
             continue
 
-        # Handle URLs first to ensure they are clickable
-        def replace_url(match):
-            url = match.group(1)
-            return f'<a href="{url}" target="_blank" rel="noopener noreferrer">{url}</a>'
-
-        para = re.sub(url_pattern, replace_url, para)
-
-        # Handle bullet points (preserve existing behavior)
-        if para.startswith('* ') or para.startswith('- '):
+        # Handle paragraphs with bullet points or bold text
+        if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
             lines = para.split('\n')
-            list_items = []
-            in_list = False
+            formatted_para = []
             for line in lines:
                 line = line.strip()
                 if line.startswith('* ') or line.startswith('- '):
-                    if not in_list:
-                        list_items.append('<ul>')
-                        in_list = True
-                    list_items.append(f'<li>{line[2:]}</li>')
+                    formatted_para.append(f"• {line[2:]}")
+                elif line.startswith('**') and line.endswith('**'):
+                    formatted_para.append(f"\n**{line[2:-2]}**\n")
                 else:
-                    if in_list:
-                        list_items.append('</ul>')
-                        in_list = False
-                    list_items.append(line)
-            if in_list:
-                list_items.append('</ul>')
-            para = '\n'.join(list_items)
-        elif para.startswith('**') and para.endswith('**'):
-            para = f"<p><strong>{para[2:-2]}</strong></p>"
-        else:
-            para = f"<p>{para}</p>"
+                    formatted_para.append(line)
+            para = '\n'.join(formatted_para)
+
+        # Process hyperlinks: detect URLs and strip surrounding square brackets
+        def replace_url(match):
+            url = match.group(1)
+            # Strip square brackets if they exist
+            if url.startswith('[') and url.endswith(']'):
+                url = url[1:-1]
+            return f'<a href="{url}" target="_blank">{url}</a>'
+
+        # Apply hyperlink formatting
+        para = re.sub(url_pattern, replace_url, para)
 
         formatted.append(para)
 
-    final_text = '\n'.join(formatted)
+    # Join paragraphs with double newlines
+    final_text = '\n\n'.join(formatted)
     return final_text
 
 # Initialize Gemini model
@@ -211,7 +190,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "OPTIONS", "HEAD"],
+    allow_methods=["GET", "POST", "OPTIONS", "HEAD"],
     allow_headers=["*"],
 )
 
@@ -234,10 +213,6 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
-    message_id: str
-
-class MemoryResponse(BaseModel):
-    messages: List[Message]
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = Form(...), file: UploadFile = File(None)):
@@ -247,62 +222,45 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         if file:
             file_content = await process_uploaded_file(file)
 
+        # Validate session_id
         if not session_id:
             raise HTTPException(status_code=422, detail="session_id is required")
 
+        # Load session data
         session_data = load_session(session_id)
 
+        # Check for initial welcome message
         session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
         if not os.path.exists(session_file) and not prompt.strip():
             assistant_response = "Okay, I'm ready to assist you with your legal questions related to Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and other relevant topics. I can also help determine legal rights and official government procedures within my area of expertise. Please ask your question."
-            return ChatResponse(response=assistant_response, message_id="initial")
+            return ChatResponse(response=assistant_response)
 
+        # Handle greetings
         if is_greeting(prompt):
             assistant_response = "Hello! I'm Lexi, your legal assistant for Indian law. How can I help you today?"
-            message_id = f"msg-{int(time.time())}"
-            session_data.messages.append(Message(
-                message_id=message_id,
-                role="user",
-                text=prompt,
-                timestamp=datetime.utcnow().isoformat()
-            ))
-            session_data.messages.append(Message(
-                message_id=f"msg-{int(time.time())}",
-                role="assistant",
-                text=assistant_response,
-                timestamp=datetime.utcnow().isoformat()
-            ))
+            session_data.append({"role": "user", "text": prompt})
+            session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
-            return ChatResponse(response=assistant_response, message_id=message_id)
+            return ChatResponse(response=assistant_response)
 
-        message_id = f"msg-{int(time.time())}"
-        if session_data.memory_enabled:
-            session_data.messages.append(Message(
-                message_id=message_id,
-                role="user",
-                text=prompt,
-                timestamp=datetime.utcnow().isoformat()
-            ))
-        else:
-            session_data.messages = [Message(
-                message_id=message_id,
-                role="user",
-                text=prompt,
-                timestamp=datetime.utcnow().isoformat()
-            )]
+        # Append user input to session history
+        session_data.append({"role": "user", "text": prompt})
 
+        # Load base prompt
         with open("prompts/base_prompt.txt", "r") as f:
             base_prompt = f.read()
 
-        history_summary = summarize_history(session_data.messages)
-        history = "\n".join([f"{msg.role}: {msg.text}" for msg in session_data.messages])
+        # Construct conversation history
+        history = " ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])
 
-        formatting_instruction = "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points. For follow-up questions, reference the conversation history to provide context-aware responses. Include URLs as clickable links."
-        prompt = f"{base_prompt}\n\n{formatting_instruction}\n\nConversation Summary:\n{history_summary}\n\nFull Conversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
+        # Construct prompt with formatting instructions
+        formatting_instruction = "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points."
+        prompt = f"{base_prompt}\n\n{formatting_instruction}\n\nConversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
 
         if file_content:
             prompt = f"File content:\n{file_content}\n\n{prompt}"
 
+        # Generate response
         async def generate_content():
             response = model.generate_content(prompt)
             return response
@@ -310,31 +268,18 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         try:
             response = await retry_request(generate_content)
             assistant_response = format_response(response.text, prompt)
-            assistant_message_id = f"msg-{int(time.time())}"
-            if session_data.memory_enabled:
-                session_data.messages.append(Message(
-                    message_id=assistant_message_id,
-                    role="assistant",
-                    text=assistant_response,
-                    timestamp=datetime.utcnow().isoformat()
-                ))
+            session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
-            return ChatResponse(response=assistant_response, message_id=assistant_message_id)
+            return ChatResponse(response=assistant_response)
         except genai.QuotaExceededError:
             try:
                 model = rotate_key()
                 response = await retry_request(generate_content)
                 assistant_response = format_response(response.text, prompt)
-                assistant_message_id = f"msg-{int(time.time())}"
-                if session_data.memory_enabled:
-                    session_data.messages.append(Message(
-                        message_id=assistant_message_id,
-                        role="assistant",
-                        text=assistant_response,
-                        timestamp=datetime.utcnow().isoformat()
-                    ))
+                session_data.append({"role": "assistant", "text": assistant_response})
+                session_data.append({"role": "assistant", "text": assistant_response})
                 save_session(session_id, session_data)
-                return ChatResponse(response=assistant_response, message_id=assistant_message_id)
+                return ChatResponse(response=assistant_response)
             except genai.QuotaExceededError:
                 raise HTTPException(status_code=429, detail="Quota exceeded for all API keys. Please check your API plan at https://ai.google.dev/gemini-api/docs/rate-limits.")
         except Exception as e:
@@ -347,30 +292,11 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
 
 @app.post("/regenerate", response_model=ChatResponse)
 async def regenerate_response(request: ChatRequest):
+    """Regenerate a response for the given prompt."""
     if not request.prompt:
         raise HTTPException(status_code=400, detail="Prompt is required for regeneration.")
+    # Call the chat endpoint with regenerate=True
     return await chat_with_law_assistant(session_id=request.session_id, prompt=request.prompt)
-
-@app.get("/memory/{session_id}", response_model=MemoryResponse)
-async def get_memory(session_id: str):
-    session_data = load_session(session_id)
-    return MemoryResponse(messages=session_data.messages)
-
-@app.delete("/memory/{session_id}/{message_id}")
-async def forget_message(session_id: str, message_id: str):
-    session_data = load_session(session_id)
-    session_data.messages = [msg for msg in session_data.messages if msg.message_id != message_id]
-    save_session(session_id, session_data)
-    return {"status": "success", "message": f"Message {message_id} forgotten"}
-
-@app.post("/memory/{session_id}/toggle")
-async def toggle_memory(session_id: str, enable: bool = Form(...)):
-    session_data = load_session(session_id)
-    session_data.memory_enabled = enable
-    if not enable:
-        session_data.messages = []
-    save_session(session_id, session_data)
-    return {"status": "success", "memory_enabled": enable"}
 
 if __name__ == "__main__":
     import uvicorn
