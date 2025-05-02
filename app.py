@@ -136,11 +136,8 @@ def is_greeting(prompt: str) -> bool:
 
 def format_response(text, prompt: str):
     """Format the response with paragraphs, bullet points, and properly formatted hyperlinks."""
-    # First, split text into paragraphs
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
-
-    # Regex to match URLs, excluding square brackets
     url_pattern = r'(?<![\w-])(https?:\/\/[^\s<>\]\)]+)(?![\w-])'
 
     for para in paragraphs:
@@ -148,7 +145,6 @@ def format_response(text, prompt: str):
         if not para:
             continue
 
-        # Handle paragraphs with bullet points or bold text
         if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
             lines = para.split('\n')
             formatted_para = []
@@ -162,20 +158,15 @@ def format_response(text, prompt: str):
                     formatted_para.append(line)
             para = '\n'.join(formatted_para)
 
-        # Process hyperlinks: detect URLs and strip surrounding square brackets
         def replace_url(match):
             url = match.group(1)
-            # Strip square brackets if they exist
             if url.startswith('[') and url.endswith(']'):
                 url = url[1:-1]
             return f'<a href="{url}" target="_blank">{url}</a>'
 
-        # Apply hyperlink formatting
         para = re.sub(url_pattern, replace_url, para)
-
         formatted.append(para)
 
-    # Join paragraphs with double newlines
     final_text = '\n\n'.join(formatted)
     return final_text
 
@@ -214,6 +205,17 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
 
+@app.get("/session/{session_id}")
+async def get_session(session_id: str):
+    try:
+        session_data = load_session(session_id)
+        if not session_data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        return {"session_id": session_id, "messages": session_data}
+    except Exception as e:
+        logger.error(f"Error retrieving session {session_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving session: {str(e)}")
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = Form(...), file: UploadFile = File(None)):
     global model
@@ -232,12 +234,12 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         # Check for initial welcome message
         session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
         if not os.path.exists(session_file) and not prompt.strip():
-            assistant_response = "Okay, I'm ready to assist you with your legal questions related to Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and other relevant topics. I can also help determine legal rights and official government procedures within my area of expertise. Please ask your question."
+            assistant_response = "Hello! I'm Lexi, your legal assistant specializing in Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and more. Ask me anything legal, and I'll provide clear, accurate answers."
             return ChatResponse(response=assistant_response)
 
         # Handle greetings
         if is_greeting(prompt):
-            assistant_response = "Hello! I'm Lexi, your legal assistant for Indian law. How can I help you today?"
+            assistant_response = "Hi there! I'm Lexi, ready to assist with your legal queries about Indian law. What's on your mind?"
             session_data.append({"role": "user", "text": prompt})
             session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
@@ -250,12 +252,37 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         with open("prompts/base_prompt.txt", "r") as f:
             base_prompt = f.read()
 
-        # Construct conversation history
-        history = " ".join([f"{msg['role']}: {msg['text']}" for msg in session_data])
+        # Construct structured conversation history
+        history = ""
+        for msg in session_data:
+            if msg["role"] == "user":
+                history += f"User: {msg['text']}\n"
+            else:
+                history += f"Assistant: {msg['text']}\n"
 
-        # Construct prompt with formatting instructions
-        formatting_instruction = "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points."
-        prompt = f"{base_prompt}\n\n{formatting_instruction}\n\nConversation History:\n{history}\n\nUser: {prompt}\nAssistant:"
+        # Detect if the prompt is a follow-up question
+        is_follow_up = len(prompt.split()) < 5 or any(word in prompt.lower() for word in ["more", "explain", "clarify", "further", "continue"])
+
+        # Construct prompt with enhanced context for follow-ups
+        formatting_instruction = (
+            "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points. "
+            "If the user asks a follow-up question, explicitly reference the relevant previous question or answer to ensure continuity."
+        )
+        if is_follow_up:
+            prompt = (
+                f"{base_prompt}\n\n{formatting_instruction}\n\n"
+                f"Conversation History:\n{history}\n\n"
+                f"The user has asked a follow-up question: '{prompt}'. "
+                f"Refer to the previous questions and answers in the conversation history to provide a relevant and detailed response. "
+                f"If the question is vague, infer the context from the history and clarify if needed.\n\n"
+                f"User: {prompt}\nAssistant:"
+            )
+        else:
+            prompt = (
+                f"{base_prompt}\n\n{formatting_instruction}\n\n"
+                f"Conversation History:\n{history}\n\n"
+                f"User: {prompt}\nAssistant:"
+            )
 
         if file_content:
             prompt = f"File content:\n{file_content}\n\n{prompt}"
@@ -277,7 +304,6 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
                 response = await retry_request(generate_content)
                 assistant_response = format_response(response.text, prompt)
                 session_data.append({"role": "assistant", "text": assistant_response})
-                session_data.append({"role": "assistant", "text": assistant_response})
                 save_session(session_id, session_data)
                 return ChatResponse(response=assistant_response)
             except genai.QuotaExceededError:
@@ -295,7 +321,6 @@ async def regenerate_response(request: ChatRequest):
     """Regenerate a response for the given prompt."""
     if not request.prompt:
         raise HTTPException(status_code=400, detail="Prompt is required for regeneration.")
-    # Call the chat endpoint with regenerate=True
     return await chat_with_law_assistant(session_id=request.session_id, prompt=request.prompt)
 
 if __name__ == "__main__":
