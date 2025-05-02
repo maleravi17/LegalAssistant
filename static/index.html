@@ -662,6 +662,7 @@
         chatForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const prompt = promptInput.value.trim();
+            if (!prompt) return;
             lastPrompt = prompt;
             addMessage('user', prompt);
             promptInput.value = '';
@@ -783,9 +784,7 @@
 
             let formattedText = text;
 
-            // If the text already contains <a> tags (formatted by the server), avoid reprocessing hyperlinks
             if (!/<a\s+href=["'](https?:\/\/)[^\s<>]+["'][^>]*>.*<\/a>/.test(text)) {
-                // Apply minimal formatting for paragraphs and lists if no hyperlinks are present
                 formattedText = text
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>')
@@ -796,13 +795,11 @@
                     formattedText = formattedText.replace(/(<li>.+<\/li>)/g, '<ul>$1</ul>');
                 }
             } else {
-                // If the text contains hyperlinks, only apply paragraph and list formatting carefully
                 formattedText = text
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>')
                     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
 
-                // Convert bullet points to <ul><li> without breaking existing HTML
                 if (formattedText.includes('• ')) {
                     const paragraphs = formattedText.split('</p><p>');
                     formattedText = paragraphs.map(para => {
@@ -823,7 +820,6 @@
                 }
             }
 
-            // Ensure the text is wrapped in a paragraph if it doesn't already have HTML structure
             if (!formattedText.startsWith('<p>') && !formattedText.startsWith('<ul>')) {
                 formattedText = `<p>${formattedText}</p>`;
             }
@@ -845,7 +841,7 @@
             return messageDiv;
         }
 
-        function updateHistory() {
+        async function updateHistory() {
             historySessions = JSON.parse(localStorage.getItem('historySessions')) || [];
             if (!historySessions.includes(sessionId)) {
                 historySessions.push(sessionId);
@@ -855,28 +851,46 @@
             if (historySessions.length === 0) {
                 const li = document.createElement('li');
                 li.textContent = "No history available";
-                historyList.appendChild(li);
-            }
-            historySessions.forEach(id => {
-                const li = document.createElement('li');
                 li.classList.add(isDarkTheme ? 'dark' : 'light');
-                li.textContent = `Session ${id.slice(4, 10)}`;
-                li.addEventListener('click', () => {
-                    sessionId = id;
-                    localStorage.setItem('sessionId', id);
-                    chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
-                    sidebar.style.display = 'none';
-                });
                 historyList.appendChild(li);
-            });
+                return;
+            }
+
+            for (const id of historySessions) {
+                try {
+                    const response = await fetch(`/session/${id}`);
+                    if (!response.ok) throw new Error(`HTTP error: ${response.status}`);
+                    const data = await response.json();
+                    const li = document.createElement('li');
+                    li.classList.add(isDarkTheme ? 'dark' : 'light');
+                    const firstMessage = data.messages.find(msg => msg.role === 'user')?.text.slice(0, 50) || 'Session started';
+                    li.textContent = `${firstMessage}...`;
+                    li.addEventListener('click', async () => {
+                        sessionId = id;
+                        localStorage.setItem('sessionId', id);
+                        chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
+                        try {
+                            const sessionResponse = await fetch(`/session/${id}`);
+                            if (sessionResponse.ok) {
+                                const sessionData = await sessionResponse.json();
+                                sessionData.messages.forEach(msg => {
+                                    addMessage(msg.role, msg.text, msg.role === 'assistant');
+                                });
+                            }
+                        } catch (error) {
+                            console.error(`Failed to load session ${id}:`, error);
+                        }
+                        sidebar.style.display = 'none';
+                    });
+                    historyList.appendChild(li);
+                } catch (error) {
+                    console.error(`Failed to load session ${id}:`, error);
+                }
+            }
         }
 
         function toggleSidebar() {
-            if (sidebar.style.display === 'none') {
-                sidebar.style.display = 'block';
-            } else {
-                sidebar.style.display = 'none';
-            }
+            sidebar.style.display = sidebar.style.display === 'none' ? 'block' : 'none';
         }
 
         function applyTheme(dark) {
