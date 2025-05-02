@@ -784,7 +784,9 @@
 
             let formattedText = text;
 
-            if (!/<a\s+href=["'](https?:\/\/)[^\s<>]+["'][^>]*>.*<\/a>/.test(text)) {
+            // Check if the text already contains properly formatted <a> tags from the backend
+            if (!/<a\s+href=["']https?:\/\/[^\s<>]+["'][^>]*>.*<\/a>/.test(text)) {
+                // If no <a> tags, apply basic formatting for paragraphs, bullets, and bold text
                 formattedText = text
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>')
@@ -795,6 +797,7 @@
                     formattedText = formattedText.replace(/(<li>.+<\/li>)/g, '<ul>$1</ul>');
                 }
             } else {
+                // If the text contains <a> tags, only apply paragraph, bold, and bullet formatting
                 formattedText = text
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br>')
