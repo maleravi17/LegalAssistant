@@ -138,13 +138,15 @@ def format_response(text, prompt: str):
     """Format the response with paragraphs, bullet points, and properly formatted hyperlinks."""
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
-    url_pattern = r'(?<![\w-])(https?:\/\/[^\s<>\]\)]+)(?![\w-])'
+    # Updated regex to handle URLs with or without square brackets
+    url_pattern = r'\[?(https?:\/\/[^\s<>\]\)]+)\]?(?:\s*\(https?:\/\/[^\s<>\]\)]+\))?'
 
     for para in paragraphs:
         para = para.strip()
         if not para:
             continue
 
+        # Handle bullet points
         if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
             lines = para.split('\n')
             formatted_para = []
@@ -158,10 +160,9 @@ def format_response(text, prompt: str):
                     formatted_para.append(line)
             para = '\n'.join(formatted_para)
 
+        # Replace URLs with proper <a> tags
         def replace_url(match):
-            url = match.group(1)
-            if url.startswith('[') and url.endswith(']'):
-                url = url[1:-1]
+            url = match.group(1)  # Extract the URL without brackets
             return f'<a href="{url}" target="_blank">{url}</a>'
 
         para = re.sub(url_pattern, replace_url, para)
