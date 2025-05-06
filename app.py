@@ -100,33 +100,33 @@ async def retry_request(func, retries=3, delay=5):
             await asyncio.sleep(delay)
             delay *= 2  # Exponential backoff
 
-async def process_uploaded_file(file: UploadFile):
-    """Process uploaded PDF or image files."""
-    if file.content_type == 'application/pdf':
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-                temp_file.write(await file.read())
-                temp_file_path = temp_file.name
-
-            with open(temp_file_path, 'rb') as pdf_file:
-                pdf_reader = PyPDF2.PdfReader(pdf_file)
-                text = ""
-                for page in pdf_reader.pages:
-                    extracted = page.extract_text()
-                    if extracted:
-                        text += extracted + "\n"
-            os.unlink(temp_file_path)
-            logger.info(f"Successfully processed PDF file: {file.filename}")
-            return text.strip() if text.strip() else "No text could be extracted from the PDF."
-        except Exception as e:
-            logger.error(f"Error processing PDF file {file.filename}: {str(e)}")
-            return f"Error processing PDF file: {str(e)}"
-    elif file.content_type.startswith('image/'):
-        logger.info(f"Image file uploaded: {file.filename}. Image processing not implemented.")
-        return f"Uploaded image: {file.filename}. Image processing is not currently supported."
-    else:
-        logger.error(f"Unsupported file type: {file.content_type}")
-        return f"Unsupported file type: {file.content_type}"
+# async def process_uploaded_file(file: UploadFile):
+#     """Process uploaded PDF or image files."""
+#     if file.content_type == 'application/pdf':
+#         try:
+#             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+#                 temp_file.write(await file.read())
+#                 temp_file_path = temp_file.name
+#
+#             with open(temp_file_path, 'rb') as pdf_file:
+#                 pdf_reader = PyPDF2.PdfReader(pdf_file)
+#                 text = ""
+#                 for page in pdf_reader.pages:
+#                     extracted = page.extract_text()
+#                     if extracted:
+#                         text += extracted + "\n"
+#             os.unlink(temp_file_path)
+#             logger.info(f"Successfully processed PDF file: {file.filename}")
+#             return text.strip() if text.strip() else "No text could be extracted from the PDF."
+#         except Exception as e:
+#             logger.error(f"Error processing PDF file {file.filename}: {str(e)}")
+#             return f"Error processing PDF file: {str(e)}"
+#     elif file.content_type.startswith('image/'):
+#         logger.info(f"Image file uploaded: {file.filename}. Image processing not implemented.")
+#         return f"Uploaded image: {file.filename}. Image processing is not currently supported."
+#     else:
+#         logger.error(f"Unsupported file type: {file.content_type}")
+#         return f"Unsupported file type: {file.content_type}"
 
 def is_greeting(prompt: str) -> bool:
     """Check if the input is a simple greeting."""
@@ -201,7 +201,7 @@ async def head_root():
 class ChatRequest(BaseModel):
     session_id: str
     prompt: str
-    regenerate: bool = False
+    # regenerate: bool = False
 
 class ChatResponse(BaseModel):
     response: str
@@ -218,12 +218,13 @@ async def get_session(session_id: str):
         raise HTTPException(status_code=500, detail=f"Error retrieving session: {str(e)}")
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = Form(...), file: UploadFile = File(None)):
+async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = Form(...)):
+# async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = Form(...), file: UploadFile = File(None)):
     global model
     try:
-        file_content = ""
-        if file:
-            file_content = await process_uploaded_file(file)
+        # file_content = ""
+        # if file:
+        #     file_content = await process_uploaded_file(file)
 
         # Validate session_id
         if not session_id:
@@ -235,12 +236,12 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         # Check for initial welcome message
         session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
         if not os.path.exists(session_file) and not prompt.strip():
-            assistant_response = "Hello! I'm Lexi, your legal assistant specializing in Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and more. Ask me anything legal, and I'll provide clear, accurate answers."
+            assistant_response = "Hello! I'm a Legal Bot, your legal assistant specializing in Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and more. Ask me anything legal, and I'll provide clear, accurate answers."
             return ChatResponse(response=assistant_response)
 
         # Handle greetings
         if is_greeting(prompt):
-            assistant_response = "Hi there! I'm Lexi, ready to assist with your legal queries about Indian law. What's on your mind?"
+            assistant_response = "Hi there! I'm a Legal Bot, ready to assist with your legal queries about Indian law. What's on your mind?"
             session_data.append({"role": "user", "text": prompt})
             session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
@@ -285,8 +286,8 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
                 f"User: {prompt}\nAssistant:"
             )
 
-        if file_content:
-            prompt = f"File content:\n{file_content}\n\n{prompt}"
+        # if file_content:
+        #     prompt = f"File content:\n{file_content}\n\n{prompt}"
 
         # Generate response
         async def generate_content():
@@ -317,12 +318,12 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         logger.error(f"Unexpected error in /chat: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
 
-@app.post("/regenerate", response_model=ChatResponse)
-async def regenerate_response(request: ChatRequest):
-    """Regenerate a response for the given prompt."""
-    if not request.prompt:
-        raise HTTPException(status_code=400, detail="Prompt is required for regeneration.")
-    return await chat_with_law_assistant(session_id=request.session_id, prompt=request.prompt)
+# @app.post("/regenerate", response_model=ChatResponse)
+# async def regenerate_response(request: ChatRequest):
+#     """Regenerate a response for the given prompt."""
+#     if not request.prompt:
+#         raise HTTPException(status_code=400, detail="Prompt is required for regeneration.")
+#     return await chat_with_law_assistant(session_id=request.session_id, prompt=request.prompt)
 
 if __name__ == "__main__":
     import uvicorn
