@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lexi</title>
+    <!-- <title>Lexi</title> -->
     <style>
         body {
             font-family: 'Roboto', Arial, sans-serif;
@@ -556,14 +556,14 @@
                     </label>
                 </div>
             </div>
-            <div id="chat-header" class="dark">Lexi</div>
+            <!-- <div id="chat-header" class="dark">Lexi</div> -->
             <div id="chat-display" class="dark">
-                <div class="message bot dark">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>
+                <div class="message bot dark">Hi! I’m a Legal Bot. Ask me about Indian law, IPC sections, or anything legal!</div>
             </div>
             <form id="chat-form">
                 <textarea id="prompt" class="dark" placeholder="Ask me anything legal..." required></textarea>
-                <label class="upload-btn dark" for="file-upload" data-tooltip="Attach">📎</label>
-                <input type="file" id="file-upload" style="display: none;" accept="image/*,application/pdf">
+                <!-- <label class="upload-btn dark" for="file-upload" data-tooltip="Attach">📎</label> -->
+                <!-- <input type="file" id="file-upload" style="display: none;" accept="image/*,application/pdf"> -->
                 <button type="submit" class="send-btn dark">↑</button>
             </form>
         </div>
@@ -595,7 +595,7 @@
         const newChatBtn = document.getElementById('new-chat');
         const historyToggleBtn = document.getElementById('history-toggle');
         const themeToggle = document.getElementById('theme-toggle');
-        const fileUpload = document.getElementById('file-upload');
+        // const fileUpload = document.getElementById('file-upload');
         const sidebar = document.getElementById('sidebar');
         const closeSidebarBtn = document.getElementById('close-sidebar');
         const historyList = document.getElementById('history-list');
@@ -623,24 +623,24 @@
             localStorage.setItem('theme', isDarkTheme ? 'dark' : 'light');
         });
 
-        fileUpload.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (event) => {
-                    const fileContent = event.target.result;
-                    addMessage('user', `Uploaded ${file.name}: [Content preview not shown, processed by bot]`);
-                    addMessage('bot', `Thank you for uploading ${file.name}. I’m analyzing it. Would you like more information?`, true);
-                };
-                reader.readAsDataURL(file);
-                fileUpload.value = '';
-            }
-        });
+        // fileUpload.addEventListener('change', (e) => {
+        //     const file = e.target.files[0];
+        //     if (file) {
+        //         const reader = new FileReader();
+        //         reader.onload = (event) => {
+        //             const fileContent = event.target.result;
+        //             addMessage('user', `Uploaded ${file.name}: [Content preview not shown, processed by bot]`);
+        //             addMessage('bot', `Thank you for uploading ${file.name}. I’m analyzing it. Would you like more information?`, true);
+        //         };
+        //         reader.readAsDataURL(file);
+        //         fileUpload.value = '';
+        //     }
+        // });
 
         newChatBtn.addEventListener('click', () => {
             sessionId = 'pla_' + Math.random().toString(36).substr(2, 9);
             localStorage.setItem('sessionId', sessionId);
-            chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
+            chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m a Legal Bot. Ask me about Indian law, IPC sections, or anything legal!</div>';
             updateHistory();
             sidebar.style.display = 'none';
         });
@@ -672,10 +672,10 @@
             const formData = new FormData();
             formData.append('session_id', sessionId);
             formData.append('prompt', prompt);
-            if (fileUpload.files.length > 0) {
-                formData.append('file', fileUpload.files[0]);
-                fileUpload.value = '';
-            }
+            // if (fileUpload.files.length > 0) {
+            //     formData.append('file', fileUpload.files[0]);
+            //     fileUpload.value = '';
+            // }
 
             try {
                 const response = await tryFetch('/chat', {
@@ -685,20 +685,20 @@
                 const data = await response.json();
                 if (response.ok) {
                     const message = addMessage('bot', data.response, true);
-                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
+                    // message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
                     message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
                     message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
+                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Like this', () => { alert('Thanks for the like!'); }, isDarkTheme));
                     message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { 
-                        const blob = new Blob([data.response], { type: 'text/plain' }); 
-                        const url = window.URL.createObjectURL(blob); 
-                        const a = document.createElement('a'); 
-                        a.href = url; 
-                        a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; 
-                        a.click(); 
-                        window.URL.revokeObjectURL(url); 
-                    }, isDarkTheme));
+                    // message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { 
+                    //     const blob = new Blob([data.response], { type: 'text/plain' }); 
+                    //     const url = window.URL.createObjectURL(blob); 
+                    //     const a = document.createElement('a'); 
+                    //     a.href = url; 
+                    //     a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; 
+                    //     a.click(); 
+                    //     window.URL.revokeObjectURL(url); 
+                    // }, isDarkTheme));
                     updateHistory();
                 } else {
                     addMessage('bot', `Error: ${data.detail}`);
@@ -710,46 +710,46 @@
             }
         });
 
-        async function regenerateResponse() {
-            if (!lastPrompt) return;
-            const typing = addMessage('bot', 'Regenerating response...');
-            try {
-                const response = await tryFetch('/regenerate', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ session_id: sessionId, prompt: lastPrompt, regenerate: true })
-                }, 3, 5000);
-                const data = await response.json();
-                if (response.ok) {
-                    const lastUserMessage = chatDisplay.querySelector('.user:last-child');
-                    const nextBotMessage = lastUserMessage ? lastUserMessage.nextElementSibling : null;
-                    if (nextBotMessage && nextBotMessage.classList.contains('bot')) {
-                        chatDisplay.removeChild(nextBotMessage);
-                    }
-                    const message = addMessage('bot', data.response, true);
-                    message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('❤️', 'Love this', () => { alert('Thanks for the love!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
-                    message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { 
-                        const blob = new Blob([data.response], { type: 'text/plain' }); 
-                        const url = window.URL.createObjectURL(blob); 
-                        const a = document.createElement('a'); 
-                        a.href = url; 
-                        a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; 
-                        a.click(); 
-                        window.URL.revokeObjectURL(url); 
-                    }, isDarkTheme));
-                } else {
-                    addMessage('bot', `Error: ${data.detail}`);
-                }
-            } catch (error) {
-                addMessage('bot', 'Sorry, I couldn’t regenerate the response. Please try again.');
-            } finally {
-                chatDisplay.removeChild(typing);
-            }
-        }
+        // async function regenerateResponse() {
+        //     if (!lastPrompt) return;
+        //     const typing = addMessage('bot', 'Regenerating response...');
+        //     try {
+        //         const response = await tryFetch('/regenerate', {
+        //             method: 'POST',
+        //             headers: { 'Content-Type': 'application/json' },
+        //             body: JSON.stringify({ session_id: sessionId, prompt: lastPrompt, regenerate: true })
+        //         }, 3, 5000);
+        //         const data = await response.json();
+        //         if (response.ok) {
+        //             const lastUserMessage = chatDisplay.querySelector('.user:last-child');
+        //             const nextBotMessage = lastUserMessage ? lastUserMessage.nextElementSibling : null;
+        //             if (nextBotMessage && nextBotMessage.classList.contains('bot')) {
+        //                 chatDisplay.removeChild(nextBotMessage);
+        //             }
+        //             const message = addMessage('bot', data.response, true);
+        //             message.querySelector('.actions').appendChild(createActionButton('🔄', 'Regenerate', () => regenerateResponse(), isDarkTheme));
+        //             message.querySelector('.actions').appendChild(createActionButton('📋', 'Copy', () => { navigator.clipboard.writeText(data.response); alert('Copied to clipboard!'); }, isDarkTheme));
+        //             message.querySelector('.actions').appendChild(createActionButton('↗', 'Share', () => { navigator.share({ text: data.response.slice(0, 50) + '...', url: window.location.href }); }, isDarkTheme));
+        //             message.querySelector('.actions').appendChild(createActionButton('❤️', 'Like this', () => { alert('Thanks for the like!'); }, isDarkTheme));
+        //             message.querySelector('.actions').appendChild(createActionButton('👎', 'Needs Improvement', () => { alert('Feedback noted!'); }, isDarkTheme));
+        //             message.querySelector('.actions').appendChild(createActionButton('↓', 'Download', () => { 
+        //                 const blob = new Blob([data.response], { type: 'text/plain' }); 
+        //                 const url = window.URL.createObjectURL(blob); 
+        //                 const a = document.createElement('a'); 
+        //                 a.href = url; 
+        //                 a.download = `response_${new Date().toISOString().slice(0, 10)}.txt`; 
+        //                 a.click(); 
+        //                 window.URL.revokeObjectURL(url); 
+        //             }, isDarkTheme));
+        //         } else {
+        //             addMessage('bot', `Error: ${data.detail}`);
+        //         }
+        //     } catch (error) {
+        //         addMessage('bot', 'Sorry, I couldn’t regenerate the response. Please try again.');
+        //     } finally {
+        //         chatDisplay.removeChild(typing);
+        //     }
+        // }
 
         async function tryFetch(url, options, retries, delay) {
             for (let i = 0; i < retries; i++) {
@@ -871,7 +871,7 @@
                     li.addEventListener('click', async () => {
                         sessionId = id;
                         localStorage.setItem('sessionId', id);
-                        chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m your Lexi. Ask me about Indian law, IPC sections, or anything legal!</div>';
+                        chatDisplay.innerHTML = '<div class="message bot ' + (isDarkTheme ? 'dark' : 'light') + '">Hi! I’m a Legal Bot. Ask me about Indian law, IPC sections, or anything legal!</div>';
                         try {
                             const sessionResponse = await fetch(`/session/${id}`);
                             if (sessionResponse.ok) {
