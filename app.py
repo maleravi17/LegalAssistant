@@ -100,33 +100,33 @@ async def retry_request(func, retries=3, delay=5):
             await asyncio.sleep(delay)
             delay *= 2  # Exponential backoff
 
-# async def process_uploaded_file(file: UploadFile):
-#     """Process uploaded PDF or image files."""
-#     if file.content_type == 'application/pdf':
-#         try:
-#             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-#                 temp_file.write(await file.read())
-#                 temp_file_path = temp_file.name
-#
-#             with open(temp_file_path, 'rb') as pdf_file:
-#                 pdf_reader = PyPDF2.PdfReader(pdf_file)
-#                 text = ""
-#                 for page in pdf_reader.pages:
-#                     extracted = page.extract_text()
-#                     if extracted:
-#                         text += extracted + "\n"
-#             os.unlink(temp_file_path)
-#             logger.info(f"Successfully processed PDF file: {file.filename}")
-#             return text.strip() if text.strip() else "No text could be extracted from the PDF."
-#         except Exception as e:
-#             logger.error(f"Error processing PDF file {file.filename}: {str(e)}")
-#             return f"Error processing PDF file: {str(e)}"
-#     elif file.content_type.startswith('image/'):
-#         logger.info(f"Image file uploaded: {file.filename}. Image processing not implemented.")
-#         return f"Uploaded image: {file.filename}. Image processing is not currently supported."
-#     else:
-#         logger.error(f"Unsupported file type: {file.content_type}")
-#         return f"Unsupported file type: {file.content_type}"
+async def process_uploaded_file(file: UploadFile):
+    """Process uploaded PDF or image files."""
+    if file.content_type == 'application/pdf':
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+                temp_file.write(await file.read())
+                temp_file_path = temp_file.name
+
+            with open(temp_file_path, 'rb') as pdf_file:
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                text = ""
+                for page in pdf_reader.pages:
+                    extracted = page.extract_text()
+                    if extracted:
+                        text += extracted + "\n"
+            os.unlink(temp_file_path)
+            logger.info(f"Successfully processed PDF file: {file.filename}")
+            return text.strip() if text.strip() else "No text could be extracted from the PDF."
+        except Exception as e:
+            logger.error(f"Error processing PDF file {file.filename}: {str(e)}")
+            return f"Error processing PDF file: {str(e)}"
+    elif file.content_type.startswith('image/'):
+        logger.info(f"Image file uploaded: {file.filename}. Image processing not implemented.")
+        return f"Uploaded image: {file.filename}. Image processing is not currently supported."
+    else:
+        logger.error(f"Unsupported file type: {file.content_type}")
+        return f"Unsupported file type: {file.content_type}"
 
 def is_greeting(prompt: str) -> bool:
     """Check if the input is a simple greeting."""
@@ -138,7 +138,6 @@ def format_response(text, prompt: str):
     """Format the response with paragraphs, bullet points, and properly formatted hyperlinks."""
     paragraphs = text.split('\n\n') if '\n\n' in text else text.split('\n')
     formatted = []
-    # Updated regex to handle URLs with or without square brackets
     url_pattern = r'\[?(https?:\/\/[^\s<>\]\)]+)\]?(?:\s*\(https?:\/\/[^\s<>\]\)]+\))?'
 
     for para in paragraphs:
@@ -146,7 +145,6 @@ def format_response(text, prompt: str):
         if not para:
             continue
 
-        # Handle bullet points
         if para.startswith('* ') or para.startswith('- ') or para.startswith('**'):
             lines = para.split('\n')
             formatted_para = []
@@ -160,9 +158,8 @@ def format_response(text, prompt: str):
                     formatted_para.append(line)
             para = '\n'.join(formatted_para)
 
-        # Replace URLs with proper <a> tags
         def replace_url(match):
-            url = match.group(1)  # Extract the URL without brackets
+            url = match.group(1)
             return f'<a href="{url}" target="_blank">{url}</a>'
 
         para = re.sub(url_pattern, replace_url, para)
@@ -201,7 +198,6 @@ async def head_root():
 class ChatRequest(BaseModel):
     session_id: str
     prompt: str
-    # regenerate: bool = False
 
 class ChatResponse(BaseModel):
     response: str
@@ -218,13 +214,12 @@ async def get_session(session_id: str):
         raise HTTPException(status_code=500, detail=f"Error retrieving session: {str(e)}")
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = Form(...)):
-# async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = Form(...), file: UploadFile = File(None)):
+async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = Form(...), file: UploadFile = File(None)):
     global model
     try:
-        # file_content = ""
-        # if file:
-        #     file_content = await process_uploaded_file(file)
+        file_content = ""
+        if file:
+            file_content = await process_uploaded_file(file)
 
         # Validate session_id
         if not session_id:
@@ -235,20 +230,20 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
 
         # Check for initial welcome message
         session_file = os.path.join(SESSION_FOLDER, f"{session_id}.json")
-        if not os.path.exists(session_file) and not prompt.strip():
-            assistant_response = "Hello! I'm a Legal Bot, your legal assistant specializing in Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and more. Ask me anything legal, and I'll provide clear, accurate answers."
+        if not os.path.exists(session_file) and not prompt.strip() and not file:
+            assistant_response = "Hello! I'm a Legal Bot, your legal assistant specializing in Indian law, including IPC sections, Indian Acts, judgments, passport-related issues, and more. Ask me anything legal or upload a document for analysis!"
             return ChatResponse(response=assistant_response)
 
         # Handle greetings
-        if is_greeting(prompt):
-            assistant_response = "Hi there! I'm a Legal Bot, ready to assist with your legal queries about Indian law. What's on your mind?"
+        if is_greeting(prompt) and not file:
+            assistant_response = "Hi there! I'm a Legal Bot, ready to assist with your legal queries about Indian law. What's on your mind? You can also upload a document for analysis."
             session_data.append({"role": "user", "text": prompt})
             session_data.append({"role": "assistant", "text": assistant_response})
             save_session(session_id, session_data)
             return ChatResponse(response=assistant_response)
 
         # Append user input to session history
-        session_data.append({"role": "user", "text": prompt})
+        session_data.append({"role": "user", "text": prompt + (f"\n\nUploaded file: {file.filename}" if file else "")})
 
         # Load base prompt
         with open("prompts/base_prompt.txt", "r") as f:
@@ -268,14 +263,16 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
         # Construct prompt with enhanced context for follow-ups
         formatting_instruction = (
             "Format the response with clear paragraphs separated by double newlines and use bullet points (e.g., '* ') for lists or key points. "
-            "If the user asks a follow-up question, explicitly reference the relevant previous question or answer to ensure continuity."
+            "If the user asks a follow-up question, explicitly reference the relevant previous question or answer to ensure continuity. "
+            "If a document is provided, analyze its content and provide a legal interpretation or summary relevant to the user's query."
         )
         if is_follow_up:
             prompt = (
                 f"{base_prompt}\n\n{formatting_instruction}\n\n"
                 f"Conversation History:\n{history}\n\n"
+                f"Uploaded File Content:\n{file_content}\n\n"
                 f"The user has asked a follow-up question: '{prompt}'. "
-                f"Refer to the previous questions and answers in the conversation history to provide a relevant and detailed response. "
+                f"Refer to the previous questions, answers, and uploaded file content (if any) to provide a relevant and detailed response. "
                 f"If the question is vague, infer the context from the history and clarify if needed.\n\n"
                 f"User: {prompt}\nAssistant:"
             )
@@ -283,11 +280,9 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
             prompt = (
                 f"{base_prompt}\n\n{formatting_instruction}\n\n"
                 f"Conversation History:\n{history}\n\n"
+                f"Uploaded File Content:\n{file_content}\n\n"
                 f"User: {prompt}\nAssistant:"
             )
-
-        # if file_content:
-        #     prompt = f"File content:\n{file_content}\n\n{prompt}"
 
         # Generate response
         async def generate_content():
@@ -317,13 +312,6 @@ async def chat_with_law_assistant(session_id: str = Form(...), prompt: str = For
     except Exception as e:
         logger.error(f"Unexpected error in /chat: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Unexpected error: {str(e)}")
-
-# @app.post("/regenerate", response_model=ChatResponse)
-# async def regenerate_response(request: ChatRequest):
-#     """Regenerate a response for the given prompt."""
-#     if not request.prompt:
-#         raise HTTPException(status_code=400, detail="Prompt is required for regeneration.")
-#     return await chat_with_law_assistant(session_id=request.session_id, prompt=request.prompt)
 
 if __name__ == "__main__":
     import uvicorn
